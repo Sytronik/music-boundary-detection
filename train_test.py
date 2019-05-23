@@ -16,13 +16,14 @@ from tqdm import tqdm
 import data_manager
 from adamwr import AdamW, CosineLRWithRestarts
 from hparams import hparams
+from models import UNet
 
 
 # Wrapper class to run PyTorch model
 class Runner(object):
     def __init__(self, hparams, train_size):
         # TODO: model initialization
-        # self.model = models.ResNet(num_classes=len(hparams.genres), **hparams.ResNet)
+        # self.model = UNet()
 
         self.criterion = torch.nn.CrossEntropyLoss()
 
@@ -68,7 +69,10 @@ class Runner(object):
             else:
                 self.out_device = torch.device(hparams.out_device)
 
-        # summary(self.model, [(1, 128, 128), (1, 1, 1)])
+        # print_to_file(Path(hparams.log_dir, 'summary.txt'),
+        #               summary,
+        #               (self.model, [(1, 128, 128), (1, 1, 1)]),
+        #               )
         self.writer = SummaryWriter(log_dir=hparams.log_dir)
 
         # save hyperparameters
