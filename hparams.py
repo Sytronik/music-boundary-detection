@@ -8,14 +8,14 @@ For example:
 """
 import argparse
 from dataclasses import dataclass, field
-from typing import List, Tuple, Dict, Union, Sequence
+from typing import List, Tuple, Dict, Union, Sequence, Any
 
 
 @dataclass
 class HParams(object):
     # Dataset Settings
-    dataset_path: Dict[str] = field(init=False)
-    feature_path: Dict[str] = field(init=False)
+    dataset_path: Dict[str, str] = field(init=False)
+    feature_path: Dict[str, str] = field(init=False)
 
     # Feature Parameters
     sample_rate: int = 22050
@@ -29,10 +29,10 @@ class HParams(object):
     log_dir = './runs/main'
 
     # Model Parameters
-    model: Dict = field(init=False)
+    model: Dict[str, Any] = field(init=False)
 
     # Training Parameters
-    scheduler: Dict = field(init=False)
+    scheduler: Dict[str, Any] = field(init=False)
     out_device: Union[int, str] = 3
     train_ratio = 0.7
     batch_size: int = 16
