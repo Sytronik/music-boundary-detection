@@ -53,7 +53,10 @@ class HParams(object):
                                  test='./SOUNDLAB_MBD_melspec')
         # TODO
         self.model = {}
-        self.scheduler = {}
+        self.scheduler = dict(restart_period=10,
+                              t_mult=2,
+                              eta_threshold=1.5,
+                              )
 
     # Function for parsing argument and set hyper parameters
     def parse_argument(self, print_argument=True):
