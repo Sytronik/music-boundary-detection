@@ -117,9 +117,9 @@ class FusionNetBlock(nn.Module):
 
 
 class InConv(nn.Module):
-    def __init__(self, in_ch: int, out_ch: int):
+    def __init__(self, in_ch: int, out_ch: int, use_cbam=False):
         super().__init__()
-        self.block = FusionNetBlock(in_ch, out_ch, nn.ReLU(inplace=True))
+        self.block = FusionNetBlock(in_ch, out_ch, nn.ReLU(inplace=True), use_cbam=use_cbam)
         # self.conv = ResidualBlock(in_ch, out_ch)
 
     def forward(self, x):
@@ -128,11 +128,12 @@ class InConv(nn.Module):
 
 
 class DownAndConv(nn.Module):
-    def __init__(self, in_ch: int, out_ch: int, hidden_ch=0, groups=0):
+    def __init__(self, in_ch: int, out_ch: int,
+                 hidden_ch=0, groups=0, use_cbam=False):
         super().__init__()
         self.pool = nn.MaxPool2d((2, 2))
 
-        self.block = FusionNetBlock(in_ch, out_ch, nn.ReLU(inplace=True))
+        self.block = FusionNetBlock(in_ch, out_ch, nn.ReLU(inplace=True), use_cbam=use_cbam)
 
         # if not hidden_ch:
         #     hidden_ch = min(in_ch, out_ch) // 2
@@ -148,7 +149,8 @@ class DownAndConv(nn.Module):
 
 
 class UpAndConv(nn.Module):
-    def __init__(self, in_ch: int, out_ch: int, hidden_ch=0, groups=0, bilinear=False):
+    def __init__(self, in_ch: int, out_ch: int,
+                 hidden_ch=0, groups=0, bilinear=False, use_cbam=False):
         super().__init__()
 
         if bilinear:
@@ -156,7 +158,7 @@ class UpAndConv(nn.Module):
         else:
             self.up = nn.ConvTranspose2d(in_ch, out_ch, (2, 2), stride=(2, 2))
 
-        self.block = FusionNetBlock(out_ch, out_ch, nn.ReLU(inplace=True))
+        self.block = FusionNetBlock(out_ch, out_ch, nn.ReLU(inplace=True), use_cbam=use_cbam)
 
         # if not hidden_ch:
         #     hidden_ch = min(in_ch, out_ch) // 2

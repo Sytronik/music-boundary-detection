@@ -52,7 +52,12 @@ class HParams(object):
         self.path_feature = dict(train=Path('./salami_feature'),
                                  test=Path('./SOUNDLAB_MBD_feature'))
         # TODO
-        self.model = {}
+        self.model = dict(ch_in=2,
+                          ch_out=1,
+                          ch_base=32,
+                          depth=4,
+                          use_cbam=True
+                          )
         self.scheduler = dict(restart_period=10,
                               t_mult=2,
                               eta_threshold=1.5,

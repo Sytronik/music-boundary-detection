@@ -6,24 +6,24 @@ from .unet_parts import InConv, DownAndConv, UpAndConv, OutConv
 
 
 class UNet(nn.Module):
-    def __init__(self, ch_in, ch_out, ch_base=32, use_cbam=False):
+    def __init__(self, ch_in, ch_out, ch_base=32, depth=4, use_cbam=False):
         super().__init__()
         self.inc = InConv(ch_in, ch_base, use_cbam=use_cbam)
 
         self.downs = nn.ModuleList(
             [DownAndConv(ch_base * (2**ii), ch_base * (2**(ii + 1)), use_cbam=use_cbam)
-             for ii in range(0, 4)]
+             for ii in range(depth)]
         )
         self.ups = nn.ModuleList(
             [UpAndConv(ch_base * (2**(ii + 1)), ch_base * (2**ii), use_cbam=use_cbam)
-             for ii in reversed(range(0, 4))]
+             for ii in reversed(range(depth))]
         )
 
         # self.outc = OutConv(ch_base, ch_out)
         self.outc = OutConv(ch_base, ch_out)
 
     def forward(self, xin):
-        x_skip = [Tensor] * 4
+        x_skip = [Tensor] * len(self.downs)
         x_skip[0] = self.inc(xin)
 
         for idx, down in enumerate(self.downs[:-1]):
