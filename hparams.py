@@ -9,13 +9,13 @@ For example:
 import argparse
 from dataclasses import dataclass, field
 from typing import List, Tuple, Dict, Union, Sequence, Any
-
+from pathlib import Path
 
 @dataclass
 class HParams(object):
     # Dataset Settings
-    dataset_path: Dict[str, str] = field(init=False)
-    feature_path: Dict[str, str] = field(init=False)
+    path_dataset: Dict[str, str] = field(init=False)
+    path_feature: Dict[str, str] = field(init=False)
 
     # Feature Parameters
     sample_rate: int = 22050
@@ -47,10 +47,10 @@ class HParams(object):
 
     def __post_init__(self):
         # self.dataset_path = dict(train='./SALAMI',
-        self.dataset_path = dict(train='/SALAMI',
-                                 test='/SOUNDLAB_MBD')
-        self.feature_path = dict(train='./SALAMI_melspec',
-                                 test='./SOUNDLAB_MBD_melspec')
+        self.path_dataset = dict(train=Path('/salami-data-public'),
+                                 test=Path('/SOUNDLAB_MBD'))
+        self.path_feature = dict(train=Path('./salami_feature'),
+                                 test=Path('./SOUNDLAB_MBD_feature'))
         # TODO
         self.model = {}
         self.scheduler = dict(restart_period=10,
