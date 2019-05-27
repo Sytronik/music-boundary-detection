@@ -160,7 +160,7 @@ class SALAMIDataset(Dataset):
             len_x: an integer T
         """
 
-        # TODO: open feature file and return
+        # TODO: open feature file, normalize and return
         x = None
         y = None
         len_x = None  # x.shape[1]

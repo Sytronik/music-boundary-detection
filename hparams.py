@@ -25,6 +25,12 @@ class HParams(object):
     num_mels: int = 128
     refresh_normconst: bool = False
 
+    # augmentation
+    pitchstep: Tuple[int] = (-1, 1, 2)
+    noise_db: Tuple[int] = (-20,)
+    max_F_rm: Tuple[int] = (20,)
+    bans: Tuple[str] = ('',)
+
     # summary path
     log_dir = './runs/main'
 
