@@ -11,6 +11,7 @@ from copy import copy
 import numpy as np
 from numpy import ndarray
 import torch
+from torch import Tensor
 from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
@@ -149,17 +150,17 @@ class SALAMIDataset(Dataset):
             assert normalization
             self.normalization = normalization
 
-    def __getitem__(self, index):
+    def __getitem__(self, index: int) -> Tuple[Tensor, Tensor, int]:
         """
 
         :param index:
         :return: (x, y, len_x)
             x: tensor with size (F, T)
             y: tensor with size (T,)
-            len_x == T
+            len_x: an integer T
         """
 
-        # TODO: open feature file and return
+        # TODO: open feature file, normalize and return
         x = None
         y = None
         len_x = None  # x.shape[1]

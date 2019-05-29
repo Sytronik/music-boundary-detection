@@ -8,14 +8,14 @@ For example:
 """
 import argparse
 from dataclasses import dataclass, field
-from typing import List, Tuple, Dict, Union, Sequence
-
+from typing import List, Tuple, Dict, Union, Sequence, Any
+from pathlib import Path
 
 @dataclass
 class HParams(object):
     # Dataset Settings
-    dataset_path: Dict[str] = field(init=False)
-    feature_path: Dict[str] = field(init=False)
+    path_dataset: Dict[str, str] = field(init=False)
+    path_feature: Dict[str, str] = field(init=False)
 
     # Feature Parameters
     sample_rate: int = 22050
@@ -25,14 +25,20 @@ class HParams(object):
     num_mels: int = 128
     refresh_normconst: bool = False
 
+    # augmentation
+    pitchstep: Tuple[int] = (-1, 1, 2)
+    noise_db: Tuple[int] = (-20,)
+    max_F_rm: Tuple[int] = (20,)
+    bans: Tuple[str] = ('',)
+
     # summary path
     log_dir = './runs/main'
 
     # Model Parameters
-    model: Dict = field(init=False)
+    model: Dict[str, Any] = field(init=False)
 
     # Training Parameters
-    scheduler: Dict = field(init=False)
+    scheduler: Dict[str, Any] = field(init=False)
     out_device: Union[int, str] = 3
     train_ratio = 0.7
     batch_size: int = 16
@@ -47,13 +53,21 @@ class HParams(object):
 
     def __post_init__(self):
         # self.dataset_path = dict(train='./SALAMI',
-        self.dataset_path = dict(train='/SALAMI',
-                                 test='/SOUNDLAB_MBD')
-        self.feature_path = dict(train='./SALAMI_melspec',
-                                 test='./SOUNDLAB_MBD_melspec')
+        self.path_dataset = dict(train=Path('/salami-data-public'),
+                                 test=Path('/SOUNDLAB_MBD'))
+        self.path_feature = dict(train=Path('./salami_feature'),
+                                 test=Path('./SOUNDLAB_MBD_feature'))
         # TODO
-        self.model = {}
-        self.scheduler = {}
+        self.model = dict(ch_in=2,
+                          ch_out=1,
+                          ch_base=32,
+                          depth=4,
+                          use_cbam=True
+                          )
+        self.scheduler = dict(restart_period=10,
+                              t_mult=2,
+                              eta_threshold=1.5,
+                              )
 
     # Function for parsing argument and set hyper parameters
     def parse_argument(self, print_argument=True):
