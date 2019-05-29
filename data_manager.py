@@ -155,7 +155,7 @@ class SALAMIDataset(Dataset):
         :param index:
         :return: (x, y, len_x)
             x: tensor with size (F, T)
-            y: tensor with size (C, T)
+            y: tensor with size (T,)
             len_x == T
         """
 
@@ -176,10 +176,8 @@ class SALAMIDataset(Dataset):
         batch_x = batch_x.permute(0, 2, 1)  # B, F, T
         batch_x = batch_x.unsqueeze(1)  # B, 1, F, T
 
-        batch_y = [item[1].permute(1, 0) for item in batch]
-        batch_y = pad_sequence(batch_y, batch_first=True)  # B, T, C
-        batch_y = batch_y.permute(0, 2, 1)  # B, C, T
-        batch_y = batch_y.unsqueeze(2)  # B, C, 1, T
+        batch_y = [item[1] for item in batch]
+        batch_y = pad_sequence(batch_y, batch_first=True)  # B, T
 
         len_x = torch.tensor([item[2] for item in batch], dtype=torch.float32)
         len_x = len_x.unsqueeze(-1)  # B, 1
