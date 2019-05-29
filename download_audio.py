@@ -70,11 +70,11 @@ header = csv_data[0]
 print(header)
 
 
-for row in range(1, 7):
+for row in range(1, len(csv_data)):
     download_yt(row)
 
 
-for row in range(1, 7):
+for row in range(1, len(csv_data)):
     try:
         match_salami(row)
     except:
