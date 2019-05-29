@@ -12,6 +12,7 @@ import torch.nn as nn
 from tensorboardX import SummaryWriter
 from torchsummary import summary
 from tqdm import tqdm
+import matplotlib.pyplot as plt
 
 import data_manager
 from adamwr import AdamW, CosineLRWithRestarts
@@ -96,7 +97,7 @@ class Runner(object):
         all_pred = []  # all predictions (for confusion matrix)
         print()
         pbar = tqdm(dataloader, desc=f'epoch {epoch:3d}', postfix='-', dynamic_ncols=True)
-        for x, y, len_x in pbar:
+        for idx, (x, y, len_x) in enumerate(pbar):
             y_cpu = y
             x = x.to(self.device)
             x = dataloader.dataset.normalization.normalize_(x)
@@ -122,6 +123,18 @@ class Runner(object):
                 self.optimizer.step()
                 self.scheduler.batch_step()
             else:
+                if idx == 0:
+                    # y_cpu 랑 prediction을 matplotlib 으로 visualize하는 함수를 호출
+                    color_pred = plt.cm.Set3(prediction[idx, :])
+                    color_y_cpu = plt.cm.Set3(y_cpu[idx, :])
+                    pos_pred = np.arange(prediction.shape[1])
+                    pos_y_cpu = np.arange(y_cpu.shape[1])
+                    fig = plt.figure()
+                    fig.subplot(2, 1, 1, title='prediction')
+                    fig.bar(pos_pred, height=1, color=color_pred)
+                    fig.subplot(2, 1, 2, title='y_cpu')
+                    fig.bar(pos_y_cpu, height=1, color=color_y_cpu)
+                    self.writer.add_figure(mode, fig, epoch)
                 all_pred.append(prediction.numpy())
 
             pbar.set_postfix_str(str(loss.item()))
