@@ -12,6 +12,7 @@ from itertools import product
 import librosa
 import numpy as np
 from numpy import ndarray
+from tqdm import tqdm
 
 from hparams import hparams
 
@@ -56,11 +57,15 @@ def main(kind_data: str):
     max_F_rm = (0, *hparams.max_F_rm)
 
     songs = []
+    sect_names = {'Silence'}
+    sect_maps = dict()
+    coarse_maps = dict()
     sr = 44100
     T = 1 / sr
 
     f_metadata = path_metadata.open('r', newline='')
-    for idx, l_meta in enumerate(csv.reader(f_metadata)):
+    pbar = tqdm(csv.reader(f_metadata), dynamic_ncols=True)
+    for idx, l_meta in enumerate(pbar):
         if idx == 0:
             continue
         song_id = int(l_meta[0])
@@ -101,22 +106,97 @@ def main(kind_data: str):
 
         t_boundaries = []
         sections = []
-        f_annot = (
+        coarse = []
+        f_section = (
+                path_annot_dir / f'{song_id}/parsed/textfile1_functions.txt'
+        ).open('r', newline='')
+        f_coarse = (
                 path_annot_dir / f'{song_id}/parsed/textfile1_uppercase.txt'
         ).open('r', newline='')
-        for l_annot in csv.reader(f_annot, delimiter='\t'):
-            t_boundaries += l_annot[0]
-            sections += l_annot[1]
-        f_annot.close()
+        iter_sect = csv.reader(f_section, delimiter='\t')
+        iter_coarse = csv.reader(f_coarse, delimiter='\t')
+        if len(iter_sect) != len(iter_coarse):
+            raise Exception(song_id)
+        for l_sect, l_coarse in zip(iter_sect, iter_coarse):
+            t = float(l_sect[0])
+            s = l_sect[1]
+            c = l_coarse[1]
+            if t == 0:
+                if s != 'Silence' or c != 'Silence':
+                    raise Exception(song_id)
+                continue
+            if s == 'End':
+                continue
+            if not sections:
+                if sections[-1] == s and coarse[-1] == c:
+                    continue
+                elif sections[-1] == s ^ coarse[-1] == c:
+                    raise Exception(song_id)
+            t_boundaries += t
+            sections += s
+            coarse += c
+        f_section.close()
+        f_coarse.close()
 
-        # TODO: boundary label / segmentation map per song basis / segmap by section names
-        # boundary_labels = []
-        # raw_segmap = []
-        # i_boundary = 0
-        # for i_frame in range(len(t_frames)):
-        #     t_frames[i_frames]
+        sect_names.union(sections)
+
+        # boundary label / section segmentation map / coarse structure map
+        boundary_labels = []
+        sect_map = ['Silence']
+        coarse_map = ['Silence']
+        i_boundary = 0
+        for i_frame in range(len(t_frames)):
+            if i_boundary == len(t_boundaries):
+                boundary_labels += 0
+                sect_map += sect_map[-1]
+                coarse_map += coarse_map[-1]
+            elif t_boundaries[i_boundary] - t_frames[i_frame] > hparams.hop_size * T:
+                boundary_labels += 0
+                sect_map += sect_map[-1]
+                coarse_map += coarse_map[-1]
+            elif (t_boundaries[i_boundary] - t_frames[i_frame]
+                  > t_frames[i_frame] - t_boundaries[i_boundary+1]):
+                # if the next frame is closer than the current frame
+                boundary_labels += 0
+                sect_map += sect_map[-1]
+                coarse_map += coarse_map[-1]
+            elif (t_boundaries[i_boundary] - t_frames[i_frame]
+                  <= t_frames[i_frame] - t_boundaries[i_boundary+1]):
+                # if the current frame is closer than the next frame
+                boundary_labels += 1
+                sect_map += sections[i_boundary]
+                coarse_map += coarse[i_boundary]
+                i_boundary += 1
+            elif (t_boundaries[i_boundary] - t_frames[i_frame]
+                  < t_frames[i_frame] - t_boundaries[i_boundary-1]):
+                # if the current frame is closer than the prev frame
+                boundary_labels += 1
+                sect_map += sections[i_boundary]
+                coarse_map += coarse[i_boundary]
+                i_boundary += 1
+            else:
+                raise Exception(song_id)
+
+        sect_maps[song_id] = sect_map
+        coarse_maps[song_id] = coarse_map
 
     f_metadata.close()
+
+    dict_sect_idx = {name: idx for idx, name in enumerate(sect_names)}
+    for song_id in sect_maps.keys():
+        sect_maps[song_id] = np.array([dict_sect_idx[s] for s in sect_maps[song_id]])
+        coarse_map = []
+        dict_coarse_idx = {}
+        idx = 0
+        for c in coarse_maps[song_id]:
+            if c not in dict_coarse_idx:
+                dict_coarse_idx[c] = idx
+                idx += 1
+            coarse_map += dict_coarse_idx[c]
+        coarse_maps[song_id] = np.array(coarse_map)
+
+    np.savez(hparams.path_feature[kind_data] / 'section_maps.npz', **sect_maps)
+    np.savez(hparams.path_feature[kind_data] / 'coarse_maps.npz', **coarse_maps)
 
 
 if __name__ == '__main__':
