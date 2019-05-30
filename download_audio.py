@@ -1,81 +1,83 @@
-from __future__ import unicode_literals
-import youtube_dl
-import librosa
+from argparse import ArgumentParser
+from decimal import Decimal
 import os
-import numpy as np
-from pathlib import Path
-import decimal
+import csv
 import subprocess
+from pathlib import Path
+from typing import List, Dict
+
+import librosa
+import numpy as np
+import youtube_dl
 
 
+def download_yt(row: Dict[str, str]):
+    s_fname = str(path_raw_audio / f'{row["salami_id"]}.mp3')
+    ydl_opts = dict(format='bestaudio/best',
+                    outtmpl=s_fname,
+                    quiet=True,
+                    ignoreerrors=True,
+                    postprocessors=[dict(key='FFmpegExtractAudio',
+                                         preferredcodec='mp3',
+                                         preferredquality='192')],
+                    )
 
-def download_yt(row: list):
-    file_name = './SALAMI/audio_youtube/' + csv_data[row][header.index('salami_id')] + '.mp3'
-    ydl_opts = {
-        'format': 'bestaudio/best',
-        'outtmpl': file_name,
-        'quiet': True,
-        'ignoreerrors': True,
-        'postprocessors': [{
-            'key': 'FFmpegExtractAudio',
-            'preferredcodec': 'mp3',
-            'preferredquality': '192',
-        }],
-    }
-
-    url = 'https://www.youtube.com/watch?v=' + csv_data[row][header.index('youtube_id')]
+    url = f'https://www.youtube.com/watch?v={row["youtube_id"]}'
 
     with youtube_dl.YoutubeDL(ydl_opts) as ydl:
         ydl.download([url])
-        print(file_name + ' is successfully downloaded')
+        print(f'{s_fname} is successfully downloaded')
 
 
-def match_salami(row: list):
-    file_name = './SALAMI/audio_youtube/' + csv_data[row][header.index('salami_id')] + '.mp3'
-    y, sr = librosa.load(file_name, sr=None)
-    start_pad_time = decimal.Decimal(csv_data[row][header.index('onset_in_salami')]) \
-                     - decimal.Decimal(csv_data[row][header.index('onset_in_youtube')])
-    N_start_pad = int(start_pad_time * sr)
-    N_length = round(float(csv_data[row][header.index('salami_length')]) * sr)
+def match_salami(row: Dict[str, str]):
+    spath_original = str(path_raw_audio / f'{row["salami_id"]}.mp3')
+    y, sr = librosa.load(spath_original, sr=None)
+    start_pad_time = (Decimal(row['onset_in_salami'])
+                      - Decimal(row['onset_in_youtube']))
+    N_start_pad = round(start_pad_time * sr)
+    # N_length = round(float(row['salami_length']) * sr)
 
     if start_pad_time > 0:
         y = np.pad(y, (N_start_pad,), mode='constant')
     elif start_pad_time < 0:
         y = y[np.abs(N_start_pad):]
 
-    save_path = './SALAMI/matched_audio'
-    save_name = save_path + '/' + csv_data[row][header.index('salami_id')] + '.wav'
+    path_wav = path_matched_audio / f'{row["salami_id"]}.wav'
 
-    if not os.path.exists(save_path):
-        os.mkdir(save_path)
+    librosa.output.write_wav(str(path_wav), y, sr)
+    path_mp3 = path_wav.with_suffix('.mp3')
 
-    librosa.output.write_wav(save_name, y, sr)
-    converted_name = './SALAMI/matched_audio/' + csv_data[row][header.index('salami_id')] + '.mp3'
-
-    subprocess.call(['ffmpeg', '-i',
-                     save_name,
-                     converted_name])
-    os.remove(save_name)
+    subprocess.call(('ffmpeg', '-i', str(path_wav), str(path_mp3)))
+    os.remove(path_wav)
 
 
-csv_path = Path('.', 'salami_youtube_pairings.csv')
+def main(mode: str):
+    path_csv = Path('./salami_youtube_pairings.csv')
 
-with csv_path.open('r') as file:
-    csv_data = []
-    for line in file.readlines():
-        line = line.replace('\n', '')
-        csv_data.append(line.split(','))
+    with path_csv.open('r') as f:
+        csv_data = [line for line in csv.reader(f)]
 
-header = csv_data[0]
-print(header)
+    header = csv_data[0]
+    print(header)
+    rows_as_dict: List[Dict[str, str]] = []
+
+    for row in csv_data[1:]:
+        rows_as_dict += {c: row[i] for i, c in enumerate(header)}
+
+    if mode == 'download':
+        for row in rows_as_dict:
+            download_yt(row)
+    else:
+        for row in rows_as_dict:
+            match_salami(row)
 
 
-for row in range(1, len(csv_data)):
-    download_yt(row)
-
-
-for row in range(1, len(csv_data)):
-    try:
-        match_salami(row)
-    except:
-        continue
+if __name__ == '__main__':
+    parser = ArgumentParser()
+    parser.add_argument('mode', choices=('download', 'match'))
+    parser.add_argument('--path-dl', default='./SALAMI/audio_youtube')
+    parser.add_argument('--path-match', default='./SALAMI/audio_matched')
+    args = parser.parse_args()
+    path_raw_audio = Path(args.path_dl)
+    path_matched_audio = Path(args.path_match)
+    main(args.mode)
