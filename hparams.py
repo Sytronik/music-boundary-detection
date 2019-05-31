@@ -14,21 +14,24 @@ from pathlib import Path
 @dataclass
 class HParams(object):
     # Dataset Settings
-    path_dataset: Dict[str, str] = field(init=False)
-    path_feature: Dict[str, str] = field(init=False)
+    path_dataset: Dict[str, Path] = field(init=False)
+    path_feature: Dict[str, Path] = field(init=False)
 
     # Feature Parameters
-    sample_rate: int = 22050
-    fft_size: int = 1024
-    win_size: int = 1024
-    hop_size: int = 256
+    sample_rate: int = 44100
+    fft_size: int = 2048
+    win_size: int = 2048
+    hop_size: int = 1024
     num_mels: int = 128
     refresh_normconst: bool = False
 
     # augmentation
-    pitchstep: Tuple[int] = (-1, 1, 2)
-    noise_db: Tuple[int] = (-20,)
-    max_F_rm: Tuple[int] = (20,)
+    # pitchstep: Tuple[int] = (0,)
+    pitchstep: Tuple[int] = (0, -1, 1)
+    # noise_db: Tuple[int] = (None,)
+    noise_db: Tuple[int] = (None, -24, -30, -36)
+    # max_F_rm: Tuple[int] = (0,)
+    max_F_rm: Tuple[int] = (0, 9, 15)
     bans: Tuple[str] = ('',)
 
     # summary path
@@ -92,4 +95,4 @@ class HParams(object):
 
 
 hparams = HParams()
-hparams.parse_argument()
+# hparams.parse_argument()
