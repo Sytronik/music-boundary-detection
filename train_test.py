@@ -9,6 +9,7 @@ from pathlib import Path
 import numpy as np
 import torch
 import torch.nn as nn
+from numpy import ndarray
 from tensorboardX import SummaryWriter
 from torchsummary import summary
 from tqdm import tqdm
@@ -18,6 +19,27 @@ import data_manager
 from adamwr import AdamW, CosineLRWithRestarts
 from hparams import hparams
 from models import UNet
+
+
+def draw_segmap(truth: ndarray, pred: ndarray):
+    """
+
+    :param truth: (T,)
+    :param pred: (T,)
+    :return:
+    """
+    color_pred = plt.cm.Set3(pred)
+    color_truth = plt.cm.Set3(truth)
+    pos_pred = np.arange(len(pred))
+    pos_truth = np.arange(len(truth))
+
+    fig = plt.figure()
+    fig.subplot(2, 1, 1, title='prediction')
+    fig.bar(pos_pred, height=1, color=color_pred)
+    fig.subplot(2, 1, 2, title='truth')
+    fig.bar(pos_truth, height=1, color=color_truth)
+
+    return fig
 
 
 # Wrapper class to run PyTorch model
@@ -129,15 +151,7 @@ class Runner(object):
             else:
                 if idx == 0:
                     # y_cpu 랑 prediction을 matplotlib 으로 visualize하는 함수를 호출
-                    color_pred = plt.cm.Set3(prediction[idx, :])
-                    color_y_cpu = plt.cm.Set3(y_cpu[idx, :])
-                    pos_pred = np.arange(prediction.shape[1])
-                    pos_y_cpu = np.arange(y_cpu.shape[1])
-                    fig = plt.figure()
-                    fig.subplot(2, 1, 1, title='prediction')
-                    fig.bar(pos_pred, height=1, color=color_pred)
-                    fig.subplot(2, 1, 2, title='y_cpu')
-                    fig.bar(pos_y_cpu, height=1, color=color_y_cpu)
+                    fig = draw_segmap(y_cpu[0].numpy(), prediction[0].numpy())
                     self.writer.add_figure(mode, fig, epoch)
                 all_pred.append(prediction.numpy())
 
