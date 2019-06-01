@@ -58,9 +58,9 @@ class HParams(object):
 
     # Device-dependent Parameters
     # 'cpu', 'cuda:n', the cuda device no., or the tuple of the cuda device no.
-    device: Union[int, str, Sequence[str], Sequence[int]] = (2, 3)
+    device: Union[int, str, Sequence[str], Sequence[int]] = 'cpu'
     out_device: Union[int, str] = 3
-    num_workers: int = 1
+    num_workers: int = 2
 
     def __post_init__(self):
         # self.dataset_path = dict(train='./SALAMI',

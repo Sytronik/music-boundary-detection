@@ -34,10 +34,10 @@ def draw_segmap(truth: ndarray, pred: ndarray):
     pos_truth = np.arange(len(truth))
 
     fig = plt.figure()
-    fig.subplot(2, 1, 1, title='prediction')
-    fig.bar(pos_pred, height=1, color=color_pred)
-    fig.subplot(2, 1, 2, title='truth')
-    fig.bar(pos_truth, height=1, color=color_truth)
+    plt.subplot(2, 1, 1, title='prediction')
+    plt.bar(pos_pred, height=1, color=color_pred)
+    plt.subplot(2, 1, 2, title='truth')
+    plt.bar(pos_truth, height=1, color=color_truth)
 
     return fig
 
@@ -93,6 +93,7 @@ class Runner(object):
                 self.model = nn.DataParallel(self.model,
                                              device_ids=device, output_device=out_device)
             self.model.cuda(device[0])
+            torch.cuda.set_device(device[0])
 
         # print_to_file(Path(hparams.log_dir, 'summary.txt'),
         #               summary,
@@ -126,13 +127,13 @@ class Runner(object):
         pbar = tqdm(dataloader, desc=f'epoch {epoch:3d}', postfix='-', dynamic_ncols=True)
         for idx, (x, y, len_x) in enumerate(pbar):
             y_cpu = y.int()
-            x = x.to(self.device)
+            x = x.to(self.device)  # B, C, F, T
             x = dataloader.dataset.normalization.normalize_(x)
-            y = y.to(self.out_device)
+            y = y.to(self.out_device)  # B, T
             # len_x = len_x.to(self.device)
 
-            out = self.model(x)
-            out = out.squeeze_()
+            out = self.model(x)  # B, C, 1, T
+            out = out.squeeze_(-2)  # B, C, T
 
             if mode != 'test':
                 loss = torch.zeros(1, device=self.out_device)
@@ -178,7 +179,7 @@ class Runner(object):
         # TODO: stopping criterion
         # last_restart = self.scheduler.last_restart
         #
-        # self.scheduler.step()  # scheduler.last_restart can be updated
+        self.scheduler.step()  # scheduler.last_restart can be updated
         #
         # if last_restart > 0 and epoch == self.scheduler.last_restart or train_acc >= 0.999:
         #     if (self.loss_last_restart * self.stop_thr < valid_loss
