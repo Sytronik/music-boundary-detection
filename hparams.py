@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from typing import List, Tuple, Dict, Union, Sequence, Any
 from pathlib import Path
 
+
 @dataclass
 class HParams(object):
     """
@@ -38,7 +39,8 @@ class HParams(object):
     noise_db: Tuple[int] = (None, -24, -30, -36)
     # max_F_rm: Tuple[int] = (0,)
     max_F_rm: Tuple[int] = (0, 9, 15)
-    bans: Tuple[str] = ('',)
+    bans: Dict[str, List[int]] = field(init=False)
+    s_bans: Dict[str, List[str]] = field(init=False)
 
     # summary path
     log_dir = './runs/test'
@@ -67,14 +69,28 @@ class HParams(object):
         self.path_feature = dict(train=Path('/salami-data-public/feature'),
                                  test=Path('/SOUNDLAB_MBD/feature'))
 
-        self.model = dict(ch_base=8,
-                          depth=4,
+        self.bans = dict(pitchstep=[-1, 1],
+                         noise_db=[-24, -30, -36],
+                         max_F_rm=[9, 15])
+
+        self.s_bans = {k: [str(item) for item in v] for k, v in self.bans.items()}
+
+        self.model = dict(ch_base=4,
+                          depth=2,
                           use_cbam=False,
                           )
         self.scheduler = dict(restart_period=10,
                               t_mult=2,
                               eta_threshold=1.5,
                               )
+
+    def is_banned(self, f: Path):
+        aug_coeffs = f.stem.split('_')[1:]
+        for coeff, bans in zip(aug_coeffs, self.s_bans.values()):
+            if coeff in bans:
+                return True
+
+        return False
 
     # Function for parsing argument and set hyper parameters
     def parse_argument(self, print_argument=True):

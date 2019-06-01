@@ -133,7 +133,7 @@ class Normalization:
 class SALAMIDataset(Dataset):
     def __init__(self, kind_data: str, hparams, normalization=None):
         self._PATH = hparams.path_feature[kind_data]
-        self.all_files = [f for f in self._PATH.glob('*.npy')]
+        self.all_files = [f for f in self._PATH.glob('*.npy') if not hparams.is_banned(f)]
         self.all_files = sorted(self.all_files)
         # self.all_files = list(np.random.permutation(self.all_files).tolist())
         self.all_y = dict(**np.load(self._PATH / f'{hparams.segmap}_maps.npz'))
