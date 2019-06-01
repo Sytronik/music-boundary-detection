@@ -104,8 +104,9 @@ class Runner(object):
         epoch_acc = 0
         all_pred = []  # all predictions (for confusion matrix)
         print()
-        pbar = tqdm(dataloader, desc=f'epoch {epoch:3d}', postfix='-', dynamic_ncols=True)
-        for idx, (x, y, len_x) in enumerate(pbar):
+        pbar = tqdm(dataloader, desc=f'{mode} {epoch:3d}', postfix='-', dynamic_ncols=True)
+
+        for i_batch, (x, y, len_x, ids) in enumerate(pbar):
             y_cpu = y.int()
             x = x.to(self.device)  # B, C, F, T
             x = dataloader.dataset.normalization.normalize_(x)
@@ -133,7 +134,7 @@ class Runner(object):
                 self.optimizer.step()
                 self.scheduler.batch_step()
             else:
-                if idx == 0:
+                if i_batch == 0:
                     # y_cpu 랑 prediction을 matplotlib 으로 visualize하는 함수를 호출
                     fig = draw_segmap(ids[0], y_cpu[0].numpy(), prediction[0].numpy())
                     self.writer.add_figure(mode, fig, epoch)

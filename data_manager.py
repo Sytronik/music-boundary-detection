@@ -132,8 +132,8 @@ class Normalization:
 
 class SALAMIDataset(Dataset):
     def __init__(self, kind_data: str, hparams, normalization=None):
-        self._PATH = hparams.path_feature[kind_data]
-        self.all_files = [f for f in self._PATH.glob('*.npy') if not hparams.is_banned(f)]
+        self._PATH: Path = hparams.path_feature[kind_data]
+        self.all_files: List[Path] = [f for f in self._PATH.glob('*.npy') if not hparams.is_banned(f)]
         self.all_files = sorted(self.all_files)
         # self.all_files = list(np.random.permutation(self.all_files).tolist())
         self.all_y = dict(**np.load(self._PATH / f'{hparams.segmap}_maps.npz'))
@@ -149,23 +149,25 @@ class SALAMIDataset(Dataset):
             assert normalization
             self.normalization = normalization
 
-    def __getitem__(self, idx: int) -> Tuple[Tensor, Tensor, int]:
+    def __getitem__(self, idx: int) -> Tuple[Tensor, Tensor, int, int]:
         """
 
         :param idx:
-        :return: (x, y, len_x)
+        :return: (x, y, len_x, song_id)
             x: tensor with size (F, T)
             y: tensor with size (T,)
             len_x: an integer T
+            song_id:
         """
 
         # open feature file and return
-        fname = self.all_files[idx]
-        x = torch.tensor(np.load(fname), dtype=torch.float32)
-        y = torch.tensor(self.all_y[fname.name.split('_')[0]], dtype=torch.int64)
+        f = self.all_files[idx]
+        song_id = int(f.name.split('_')[0])
+        x = torch.tensor(np.load(f), dtype=torch.float32)
+        y = torch.tensor(self.all_y[f.name.split('_')[0]], dtype=torch.int64)
         len_x = x.shape[2]
         y = y[:len_x]
-        return x, y, len_x
+        return x, y, len_x, song_id
 
     def __len__(self):
         return len(self.all_files)
@@ -183,8 +185,9 @@ class SALAMIDataset(Dataset):
         # len_x = torch.tensor([item[2] for item in batch], dtype=torch.float32)
         # len_x = len_x.unsqueeze(-1)  # B, 1
         len_x = [item[2] for item in batch]
+        batch_ids = [item[3] for item in batch]
 
-        return batch_x, batch_y, len_x
+        return batch_x, batch_y, len_x, batch_ids
 
     @classmethod
     def split(cls, dataset, ratio: Sequence[float]) -> Sequence:
