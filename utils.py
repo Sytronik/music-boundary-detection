@@ -7,6 +7,28 @@ import numpy as np
 import torch
 from numpy import ndarray
 from torch import Tensor
+import matplotlib.pyplot as plt
+
+
+def draw_segmap(song_id: int, truth: ndarray, pred: ndarray):
+    """
+
+    :param truth: (T,)
+    :param pred: (T,)
+    :return:
+    """
+    color_pred = plt.cm.Set3(pred)
+    color_truth = plt.cm.Set3(truth)
+    pos_pred = np.arange(len(pred))
+    pos_truth = np.arange(len(truth))
+
+    fig = plt.figure(figsize=(700, 400))
+    plt.subplot(2, 1, 1, title=f'{song_id} prediction')
+    plt.bar(pos_pred, height=1, color=color_pred)
+    plt.subplot(2, 1, 2, title=f'{song_id} truth')
+    plt.bar(pos_truth, height=1, color=color_truth)
+    fig.tight_layout()
+    return fig
 
 
 def print_to_file(fname: Union[str, Path], fn: Callable, args=None, kwargs=None):

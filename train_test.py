@@ -19,27 +19,7 @@ import data_manager
 from adamwr import AdamW, CosineLRWithRestarts
 from hparams import hparams
 from models import UNet
-
-
-def draw_segmap(truth: ndarray, pred: ndarray):
-    """
-
-    :param truth: (T,)
-    :param pred: (T,)
-    :return:
-    """
-    color_pred = plt.cm.Set3(pred)
-    color_truth = plt.cm.Set3(truth)
-    pos_pred = np.arange(len(pred))
-    pos_truth = np.arange(len(truth))
-
-    fig = plt.figure()
-    plt.subplot(2, 1, 1, title='prediction')
-    plt.bar(pos_pred, height=1, color=color_pred)
-    plt.subplot(2, 1, 2, title='truth')
-    plt.bar(pos_truth, height=1, color=color_truth)
-
-    return fig
+from utils import draw_segmap, print_to_file
 
 
 # Wrapper class to run PyTorch model
@@ -155,7 +135,7 @@ class Runner(object):
             else:
                 if idx == 0:
                     # y_cpu 랑 prediction을 matplotlib 으로 visualize하는 함수를 호출
-                    fig = draw_segmap(y_cpu[0].numpy(), prediction[0].numpy())
+                    fig = draw_segmap(ids[0], y_cpu[0].numpy(), prediction[0].numpy())
                     self.writer.add_figure(mode, fig, epoch)
                 all_pred.append(prediction.numpy())
 
