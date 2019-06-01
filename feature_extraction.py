@@ -54,7 +54,6 @@ def melspectrogram(y: ndarray, sr: int) -> ndarray:
 
 def extract_feature(song_id: int, path_audio: Path, path_annot: Path):
     y, _ = librosa.load(str(path_audio), sr=sample_rate, mono=False)  # 2, n
-    # length = y.shape[1]
     # print(f'{song_id:4d}: ', end='', flush=True)
 
     if kind_data == 'train':
@@ -85,6 +84,7 @@ def extract_feature(song_id: int, path_audio: Path, path_annot: Path):
         np.save(hparams.path_feature[kind_data] / f'{song_id}.npy', mel)
         # print('/', end='', flush=True)
 
+    # mel = melspectrogram(y, sample_rate)
     n_frames = np.arange(mel.shape[-1] + 1)
     t_frames = n_frames * T * hparams.hop_size
 
@@ -177,7 +177,7 @@ def main():
             if (not path_audio.exists() or l_meta[idx_discard_flag] == 'TRUE'
                     or not path_annot):
                 continue
-            songs.append(song_id)
+            songs.append(str(song_id))
             pbar_meta.set_postfix_str(f'[{len(songs)} songs]')
             results[song_id] = pool.apply_async(extract_feature,
                                                 (song_id, path_audio, path_annot))
@@ -187,8 +187,8 @@ def main():
     for song_id, result in pbar:
         sections, sect_map = result.get()
         # sections, sect_map = result
-        sect_names.union(sections)
-        sect_maps[song_id] = sect_map
+        sect_names = sect_names.union(sections)
+        sect_maps[str(song_id)] = sect_map
         pbar.write(str(sections).replace('\'', '').replace(',', ''))
 
     print()
@@ -196,17 +196,17 @@ def main():
 
     dict_sect_idx = {name: idx for idx, name in enumerate(sect_names)}
     coarse_maps = dict()
-    for song_id in sect_maps.keys():
+    for s_song_id in sect_maps.keys():
         coarse_map = []
         dict_coarse_idx = {}
         idx = 0
-        for c in sect_maps[song_id]:
+        for c in sect_maps[s_song_id]:
             if c not in dict_coarse_idx:
                 dict_coarse_idx[c] = idx
                 idx += 1
             coarse_map.append(dict_coarse_idx[c])
-        coarse_maps[song_id] = np.array(coarse_map)
-        sect_maps[song_id] = np.array([dict_sect_idx[s] for s in sect_maps[song_id]])
+        coarse_maps[s_song_id] = np.array(coarse_map)
+        sect_maps[s_song_id] = np.array([dict_sect_idx[s] for s in sect_maps[s_song_id]])
 
     np.savez(path_feature / 'section_maps.npz', **sect_maps)
     np.savez(path_feature / 'coarse_maps.npz', **coarse_maps)
