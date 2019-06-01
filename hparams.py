@@ -13,6 +13,10 @@ from pathlib import Path
 
 @dataclass
 class HParams(object):
+    """
+    If you don't understand 'field(init=False)' and __post_init__,
+    read python 3.7 dataclass documentation
+    """
     # Dataset Settings
     path_dataset: Dict[str, Path] = field(init=False)
     path_feature: Dict[str, Path] = field(init=False)
@@ -24,6 +28,8 @@ class HParams(object):
     hop_size: int = 1024
     num_mels: int = 128
     refresh_normconst: bool = False
+    segmap: str = 'section'  # section map or coarse map
+    # segmap: str = 'coarse'
 
     # augmentation
     # pitchstep: Tuple[int] = (0,)
@@ -35,37 +41,35 @@ class HParams(object):
     bans: Tuple[str] = ('',)
 
     # summary path
-    log_dir = './runs/main'
+    log_dir = './runs/test'
 
     # Model Parameters
     model: Dict[str, Any] = field(init=False)
 
     # Training Parameters
     scheduler: Dict[str, Any] = field(init=False)
-    out_device: Union[int, str] = 3
     train_ratio = 0.7
-    batch_size: int = 16
+    batch_size: int = 2
     num_epochs: int = 100
     learning_rate: float = 1e-4
-    weight_decay: float = 1e-2
+    weight_decay: float = 0
 
     # Device-dependent Parameters
     # 'cpu', 'cuda:n', the cuda device no., or the tuple of the cuda device no.
-    device: Union[int, str, Sequence[str], Sequence[int]] = (0, 1, 2, 3)
-    num_workers: int = 2
+    device: Union[int, str, Sequence[str], Sequence[int]] = (2, 3)
+    out_device: Union[int, str] = 3
+    num_workers: int = 1
 
     def __post_init__(self):
         # self.dataset_path = dict(train='./SALAMI',
         self.path_dataset = dict(train=Path('/salami-data-public'),
                                  test=Path('/SOUNDLAB_MBD'))
-        self.path_feature = dict(train=Path('./salami_feature'),
-                                 test=Path('./SOUNDLAB_MBD_feature'))
-        # TODO
-        self.model = dict(ch_in=2,
-                          ch_out=1,
-                          ch_base=32,
+        self.path_feature = dict(train=Path('/salami-data-public/feature'),
+                                 test=Path('/SOUNDLAB_MBD/feature'))
+
+        self.model = dict(ch_base=8,
                           depth=4,
-                          use_cbam=True
+                          use_cbam=False,
                           )
         self.scheduler = dict(restart_period=10,
                               t_mult=2,

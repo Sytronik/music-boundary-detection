@@ -46,9 +46,9 @@ def draw_segmap(truth: ndarray, pred: ndarray):
 class Runner(object):
     def __init__(self, hparams, train_size):
         # TODO: model initialization
-        # self.model = UNet()
+        self.model = UNet(ch_in=2, ch_out=30, **hparams.model)
 
-        self.criterion = torch.nn.CrossEntropyLoss()
+        self.criterion = torch.nn.CrossEntropyLoss(reduction='sum')
 
         self.optimizer = AdamW(self.model.parameters(),
                                lr=hparams.learning_rate,
@@ -57,7 +57,7 @@ class Runner(object):
         self.scheduler = CosineLRWithRestarts(self.optimizer,
                                               batch_size=hparams.batch_size,
                                               epoch_size=train_size,
-                                              **hparams.CosineLRWithRestarts
+                                              **hparams.scheduler
                                               )
         self.scheduler.step()
 
@@ -80,17 +80,19 @@ class Runner(object):
                     device = hparams.device
                 else:
                     device = [int(d[-1]) for d in hparams.device]
-            if len(device) > 1:
-                self.model = nn.DataParallel(self.model, device_ids=device)
 
-            self.model.cuda(device[0])
-
-            self.criterion.cuda(device[0])
-            self.device = torch.device(f'cuda:{device[0]}')
             if type(hparams.out_device) == int:
-                self.out_device = torch.device(f'cuda:{hparams.out_device}')
+                out_device = torch.device(f'cuda:{hparams.out_device}')
             else:
-                self.out_device = torch.device(hparams.out_device)
+                out_device = torch.device(hparams.out_device)
+            self.device = torch.device(f'cuda:{device[0]}')
+            self.out_device = out_device
+
+            self.criterion.cuda(self.out_device)
+            if len(device) > 1:
+                self.model = nn.DataParallel(self.model,
+                                             device_ids=device, output_device=out_device)
+            self.model.cuda(device[0])
 
         # print_to_file(Path(hparams.log_dir, 'summary.txt'),
         #               summary,
@@ -108,10 +110,9 @@ class Runner(object):
     @staticmethod
     def accuracy(source, target):
         # TODO: evaluation using mir_eval
-        # correct = (source == target).sum().item()
+        correct = (source == target).sum().item()
 
-        # return correct / source.size(0)
-        return 0
+        return correct / source.size(0)
 
     # Running model for train, test and validation.
     # mode: 'train' for training, 'eval' for validation and test
@@ -124,19 +125,21 @@ class Runner(object):
         print()
         pbar = tqdm(dataloader, desc=f'epoch {epoch:3d}', postfix='-', dynamic_ncols=True)
         for idx, (x, y, len_x) in enumerate(pbar):
-            y_cpu = y
+            y_cpu = y.int()
             x = x.to(self.device)
             x = dataloader.dataset.normalization.normalize_(x)
             y = y.to(self.out_device)
-            len_x = len_x.to(self.device)
+            # len_x = len_x.to(self.device)
 
-            out = self.model(x, len_x)
+            out = self.model(x)
+            out = out.squeeze_()
 
             if mode != 'test':
                 loss = torch.zeros(1, device=self.out_device)
-                for T, item_y, item_out in zip(len_x, y, out):
-                    T = T.item()
-                    loss += self.criterion(item_out[..., :T], item_y[..., :T]) / int(T)
+                for idx, T in enumerate(len_x):
+                    loss += self.criterion(out[idx:idx+1], y[idx:idx+1]) / T
+                # for T, item_y, item_out in zip(len_x, y, out):
+                #     loss += self.criterion(item_out[..., :T], item_y[..., :T]) / int(T)
             else:
                 loss = 0
             prediction = out.max(1)[1].int().cpu()
@@ -211,8 +214,10 @@ def main():
         train_loss, train_acc = runner.run(train_loader, 'train', epoch)
         valid_loss, valid_acc = runner.run(valid_loader, 'valid', epoch)
 
-        runner.writer.add_scalars('loss', dict(train=train_loss, valid=valid_loss), epoch)
-        runner.writer.add_scalars('accuracy', dict(train=train_acc, valid=valid_acc), epoch)
+        runner.writer.add_scalar('loss/train', train_loss, epoch)
+        runner.writer.add_scalar('loss/valid', valid_loss, epoch)
+        runner.writer.add_scalar('accuracy/train', train_acc, epoch)
+        runner.writer.add_scalar('accuracy/valid', valid_acc, epoch)
 
         # print(f'[Epoch {epoch:2d}/{hparams.num_epochs:3d}] '
         #       f'[Train Loss: {train_loss:.4f}] '
@@ -226,13 +231,14 @@ def main():
             print(f'Early stopped at {epoch}')
             break
 
-    _, test_acc = runner.run(test_loader, 'test', epoch)
+    # _, test_acc = runner.run(test_loader, 'test', epoch)
     print('Training Finished')
-    print(f'Test Accuracy: {100 * test_acc:.2f} %')
-    runner.writer.add_text('Test Accuracy', f'{100 * test_acc:.2f} %', epoch)
+    # print(f'Test Accuracy: {100 * test_acc:.2f} %')
+    # runner.writer.add_text('Test Accuracy', f'{100 * test_acc:.2f} %', epoch)
     torch.save(runner.model.state_dict(), Path(runner.writer.log_dir, 'state_dict.pt'))
     runner.writer.close()
 
 
 if __name__ == '__main__':
+    hparams.parse_argument()
     main()
