@@ -13,7 +13,6 @@ from numpy import ndarray
 from tensorboardX import SummaryWriter
 from torchsummary import summary
 from tqdm import tqdm
-import matplotlib.pyplot as plt
 
 import data_manager
 from adamwr import AdamW, CosineLRWithRestarts
@@ -28,7 +27,7 @@ class Runner(object):
         # TODO: model initialization
         self.model = UNet(ch_in=2, ch_out=30, **hparams.model)
 
-        self.criterion = torch.nn.CrossEntropyLoss(reduction='sum')
+        self.criterion = torch.nn.CrossEntropyLoss()
 
         self.optimizer = AdamW(self.model.parameters(),
                                lr=hparams.learning_rate,
@@ -89,20 +88,18 @@ class Runner(object):
 
     # Accuracy function works like loss function in PyTorch
     @staticmethod
-    def accuracy(source, target):
+    def eval(source, target, Ts):
         # TODO: evaluation using mir_eval
-        correct = (source == target).sum().item()
-
-        return correct / source.size(0)
+        pass
 
     # Running model for train, test and validation.
     # mode: 'train' for training, 'eval' for validation and test
     def run(self, dataloader, mode, epoch):
         self.model.train() if mode == 'train' else self.model.eval()
 
-        epoch_loss = 0
-        epoch_acc = 0
-        all_pred = []  # all predictions (for confusion matrix)
+        avg_loss = 0
+        avg_acc = 0
+        # all_pred = []  # all predictions (for confusion matrix)
         print()
         pbar = tqdm(dataloader, desc=f'{mode} {epoch:3d}', postfix='-', dynamic_ncols=True)
 
@@ -118,15 +115,19 @@ class Runner(object):
 
             if mode != 'test':
                 loss = torch.zeros(1, device=self.out_device)
-                for idx, T in enumerate(len_x):
-                    loss += self.criterion(out[idx:idx+1], y[idx:idx+1]) / T
+                for ii, T in enumerate(len_x):
+                    loss += self.criterion(out[ii:ii + 1, :, :T], y[ii:ii + 1, :T])
                 # for T, item_y, item_out in zip(len_x, y, out):
                 #     loss += self.criterion(item_out[..., :T], item_y[..., :T]) / int(T)
             else:
                 loss = 0
-            prediction = out.max(1)[1].int().cpu()
+            prediction = out.argmax(1).cpu()
 
-            acc = self.accuracy(prediction, y_cpu)
+            acc = torch.zeros(1)
+            for ii, T in enumerate(len_x):
+                acc += (prediction[ii:ii + 1, :T] == y[ii:ii + 1, :T]).sum().float() / T
+
+            # acc = self.eval(prediction, y_cpu, len_x)
 
             if mode == 'train':
                 self.optimizer.zero_grad()
@@ -138,14 +139,14 @@ class Runner(object):
                     # y_cpu 랑 prediction을 matplotlib 으로 visualize하는 함수를 호출
                     fig = draw_segmap(ids[0], y_cpu[0].numpy(), prediction[0].numpy())
                     self.writer.add_figure(mode, fig, epoch)
-                all_pred.append(prediction.numpy())
+                # all_pred.append(prediction.numpy())
 
-            pbar.set_postfix_str(str(loss.item()))
-            epoch_loss += out.size(0) * loss.item() if mode != 'test' else 0
-            epoch_acc += out.size(0) * acc
+            pbar.set_postfix_str(f'{loss.item():.3f}')
+            avg_loss += loss.item() if mode != 'test' else 0
+            avg_acc += acc.item()
 
-        epoch_loss = epoch_loss / len(dataloader.dataset)
-        epoch_acc = epoch_acc / len(dataloader.dataset)
+        avg_loss = avg_loss / len(dataloader.dataset)
+        avg_acc = avg_acc / len(dataloader.dataset)
 
         # draw confusion matrix
         # if mode != 'train':
@@ -153,7 +154,7 @@ class Runner(object):
         #     fig = plot_confusion_matrix(dataloader.dataset.y, all_pred, hparams.genres)
         #     self.writer.add_figure(f'confmat/{mode}', fig, epoch)
 
-        return epoch_loss, epoch_acc
+        return avg_loss, avg_acc
 
     # Early stopping function for given validation loss
     def early_stop(self, epoch, train_acc, valid_acc, valid_loss):
