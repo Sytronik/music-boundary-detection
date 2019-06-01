@@ -74,10 +74,12 @@ class Runner(object):
             self.model.cuda(device[0])
             torch.cuda.set_device(device[0])
 
-        # print_to_file(Path(hparams.log_dir, 'summary.txt'),
-        #               summary,
-        #               (self.model, [(1, 128, 128), (1, 1, 1)]),
-        #               )
+        print_to_file(Path(hparams.log_dir, 'summary.txt'),
+                      summary,
+                      (self.model, (2, 128, 128)),
+                      dict(device=str(self.device))
+                      )
+        # summary(self.model, (2, 128, 256))
         self.writer = SummaryWriter(log_dir=hparams.log_dir)
 
         # save hyperparameters
@@ -188,6 +190,14 @@ class Runner(object):
 def main():
     train_loader, valid_loader, test_loader = data_manager.get_dataloader(hparams)
     runner = Runner(hparams, len(train_loader.dataset))
+    runner.writer.add_custom_scalars(
+        dict(
+            training=dict(
+                loss=['Multiline', ['loss/train', 'loss/valid']],
+                accuracy=['Multiline', ['accuracy/train', 'accuracy/valid']],
+            )
+        )
+    )
 
     epoch = 0
     print(f'Training on {hparams.device}')
