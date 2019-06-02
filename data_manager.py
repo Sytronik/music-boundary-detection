@@ -3,14 +3,15 @@ data_manager.py
 
 A file that loads saved features and convert them into PyTorch DataLoader.
 """
-from pathlib import Path
-from typing import Sequence, Callable, Dict, Any, Tuple, List, Union
+import csv
 import multiprocessing as mp
 from copy import copy
+from pathlib import Path
+from typing import Any, Callable, Dict, List, Sequence, Tuple, Union
 
 import numpy as np
-from numpy import ndarray
 import torch
+from numpy import ndarray
 from torch import Tensor
 from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import DataLoader, Dataset
@@ -137,6 +138,7 @@ class SALAMIDataset(Dataset):
         self.all_files = sorted(self.all_files)
         # self.all_files = list(np.random.permutation(self.all_files).tolist())
         self.all_y = dict(**np.load(self._PATH / f'{hparams.segmap}_maps.npz'))
+        self.sect_names = []
 
         if kind_data == 'train':
             f_normconst = self._PATH / 'normconst.npz'
@@ -145,6 +147,13 @@ class SALAMIDataset(Dataset):
             else:
                 self.normalization = Normalization.calc_const(self.all_files)
                 self.normalization.save(f_normconst)
+
+            if hparams.segmap == 'section':
+                with (self._PATH / 'section_names.txt').open('r') as f:
+                    for line in f.readlines():
+                        line = line.split(': ')
+                        self.sect_names.append(line[1])
+
         else:
             assert normalization
             self.normalization = normalization

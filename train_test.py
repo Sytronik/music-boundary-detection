@@ -4,12 +4,13 @@ train_test.py
 A file for training model for genre classification.
 Please check the device in hparams.py before you run this code.
 """
+import os
+import shutil
 from pathlib import Path
 
-import numpy as np
 import torch
 import torch.nn as nn
-from numpy import ndarray
+# from torch.utils.tensorboard.writer import SummaryWriter
 from tensorboardX import SummaryWriter
 from torchsummary import summary
 from tqdm import tqdm
@@ -49,6 +50,8 @@ class Runner(object):
         if hparams.device == 'cpu':
             self.device = torch.device('cpu')
             self.out_device = torch.device('cpu')
+            summary_device = 'cpu'
+            self.str_device = 'cpu'
         else:
             if type(hparams.device) == int:
                 device = [hparams.device]
@@ -64,23 +67,30 @@ class Runner(object):
                 out_device = torch.device(f'cuda:{hparams.out_device}')
             else:
                 out_device = torch.device(hparams.out_device)
+
             self.device = torch.device(f'cuda:{device[0]}')
             self.out_device = out_device
 
-            self.criterion.cuda(self.out_device)
+            self.criterion.cuda(out_device)
             if len(device) > 1:
                 self.model = nn.DataParallel(self.model,
-                                             device_ids=device, output_device=out_device)
+                                             device_ids=device,
+                                             output_device=out_device)
+                self.str_device = ', '.join([f'cuda:{d}' for d in device])
+            else:
+                self.str_device = str(self.device)
+
             self.model.cuda(device[0])
             torch.cuda.set_device(device[0])
+            summary_device = 'cuda'
 
-        print_to_file(Path(hparams.log_dir, 'summary.txt'),
+        self.writer = SummaryWriter(log_dir=hparams.log_dir)
+        print_to_file(Path(self.writer.log_dir, 'summary.txt'),
                       summary,
                       (self.model, (2, 128, 128)),
-                      dict(device=str(self.device))
+                      dict(device=summary_device)
                       )
         # summary(self.model, (2, 128, 256))
-        self.writer = SummaryWriter(log_dir=hparams.log_dir)
 
         # save hyperparameters
         with Path(self.writer.log_dir, 'hparams.txt').open('w') as f:
@@ -99,8 +109,8 @@ class Runner(object):
     def run(self, dataloader, mode, epoch):
         self.model.train() if mode == 'train' else self.model.eval()
 
-        avg_loss = 0
-        avg_acc = 0
+        avg_loss = 0.
+        avg_acc = 0.
         # all_pred = []  # all predictions (for confusion matrix)
         print()
         pbar = tqdm(dataloader, desc=f'{mode} {epoch:3d}', postfix='-', dynamic_ncols=True)
@@ -123,11 +133,11 @@ class Runner(object):
                 #     loss += self.criterion(item_out[..., :T], item_y[..., :T]) / int(T)
             else:
                 loss = 0
-            prediction = out.argmax(1).cpu()
+            prediction = out.argmax(1).cpu().int()
 
-            acc = torch.zeros(1)
+            acc = 0.
             for ii, T in enumerate(len_x):
-                acc += (prediction[ii:ii + 1, :T] == y[ii:ii + 1, :T]).sum().float() / T
+                acc += (prediction[ii:ii + 1, :T] == y_cpu[ii:ii + 1, :T]).sum().item() / T
 
             # acc = self.eval(prediction, y_cpu, len_x)
 
@@ -139,13 +149,20 @@ class Runner(object):
             else:
                 if i_batch == 0:
                     # y_cpu 랑 prediction을 matplotlib 으로 visualize하는 함수를 호출
-                    fig = draw_segmap(ids[0], y_cpu[0].numpy(), prediction[0].numpy())
-                    self.writer.add_figure(mode, fig, epoch)
+                    pred_0_np = prediction[0, :len_x[0]].numpy()
+                    fig = draw_segmap(ids[0], pred_0_np)
+                    self.writer.add_figure(f'{mode}/prediction', fig, epoch)
+                    if epoch == 0:
+                        y_0_np = y_cpu[0, :len_x[0]].numpy()
+                        fig = draw_segmap(ids[0], y_0_np, dataloader.dataset.sect_names)
+                        self.writer.add_figure(f'{mode}/truth', fig, epoch)
                 # all_pred.append(prediction.numpy())
 
-            pbar.set_postfix_str(f'{loss.item():.3f}')
-            avg_loss += loss.item() if mode != 'test' else 0
-            avg_acc += acc.item()
+            if mode != 'test':
+                loss = loss.item()
+            pbar.set_postfix_str(f'{loss:.3f}, {acc*100:.2f} %')
+            avg_loss += loss if mode != 'test' else 0
+            avg_acc += acc
 
         avg_loss = avg_loss / len(dataloader.dataset)
         avg_acc = avg_acc / len(dataloader.dataset)
@@ -200,16 +217,16 @@ def main():
     )
 
     epoch = 0
-    print(f'Training on {hparams.device}')
+    print(f'Training on {runner.str_device}')
     for epoch in range(hparams.num_epochs):
         # runner.writer.add_scalar('lr', runner.optimizer.param_groups[0]['lr'], epoch)
 
         train_loss, train_acc = runner.run(train_loader, 'train', epoch)
-        valid_loss, valid_acc = runner.run(valid_loader, 'valid', epoch)
-
         runner.writer.add_scalar('loss/train', train_loss, epoch)
-        runner.writer.add_scalar('loss/valid', valid_loss, epoch)
         runner.writer.add_scalar('accuracy/train', train_acc, epoch)
+
+        valid_loss, valid_acc = runner.run(valid_loader, 'valid', epoch)
+        runner.writer.add_scalar('loss/valid', valid_loss, epoch)
         runner.writer.add_scalar('accuracy/valid', valid_acc, epoch)
 
         # print(f'[Epoch {epoch:2d}/{hparams.num_epochs:3d}] '
@@ -234,4 +251,14 @@ def main():
 
 if __name__ == '__main__':
     hparams.parse_argument()
+    if list(Path(hparams.log_dir).glob('events.out.tfevents.*')):
+        while True:
+            s = input(f'{hparams.log_dir} already has tfevents. continue? (y/n)\n')
+            if s.lower() == 'y':
+                shutil.rmtree(hparams.log_dir)
+                os.makedirs(hparams.log_dir)
+                break
+            elif s.lower() == 'n':
+                exit()
+
     main()

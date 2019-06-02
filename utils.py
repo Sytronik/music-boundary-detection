@@ -1,7 +1,7 @@
 import contextlib
 import os
 from pathlib import Path
-from typing import Callable, Union
+from typing import Callable, Union, List
 
 import numpy as np
 import torch
@@ -10,23 +10,42 @@ from torch import Tensor
 import matplotlib.pyplot as plt
 
 
-def draw_segmap(song_id: int, truth: ndarray, pred: ndarray):
+def draw_segmap(song_id: int, segmap: ndarray, sect_names: List[str] = None):
     """
 
-    :param truth: (T,)
-    :param pred: (T,)
+    :param song_id:
+    :param segmap: (T,)
+    :param sect_names: (C,)
     :return:
     """
-    color_pred = plt.cm.Set3(pred)
-    color_truth = plt.cm.Set3(truth)
-    pos_pred = np.arange(len(pred))
-    pos_truth = np.arange(len(truth))
+    if not hasattr(draw_segmap, 'cmap'):
+        draw_segmap.cmap = ([plt.cm.tab20b(i) for i in range(20)]
+                            + [plt.cm.tab20c(i) for i in range(20)])
+        draw_segmap.cmap = np.array(draw_segmap.cmap)
 
-    fig = plt.figure(figsize=(700, 400))
-    plt.subplot(2, 1, 1, title=f'{song_id} prediction')
-    plt.bar(pos_pred, height=1, color=color_pred)
-    plt.subplot(2, 1, 2, title=f'{song_id} truth')
-    plt.bar(pos_truth, height=1, color=color_truth)
+    colors = draw_segmap.cmap[segmap]
+    x = np.arange(len(segmap))
+    xlim = [-0.5, x[-1] + 0.5]
+
+    if sect_names:
+        fig = plt.figure(figsize=(x[-1] // 1000, 4))
+        plt.subplot(2, 1, 1, title=str(song_id))
+        plt.bar(x, height=1, width=1, color=colors)
+        plt.xlim(xlim)
+
+        n_labels = len(sect_names)
+        x_cbar = np.arange(n_labels)
+        xlim_cbar = [-0.5, x_cbar[-1] + 0.5]
+        plt.subplot(2, 1, 2, title='colorbar')
+        plt.bar(x_cbar, height=1, width=1, color=draw_segmap.cmap[:n_labels])
+        plt.xlim(xlim_cbar)
+        plt.xticks(x_cbar, sect_names, rotation='vertical')
+    else:
+        fig = plt.figure(figsize=(x[-1] // 1000, 1))
+        plt.title(str(song_id))
+        plt.bar(x, height=1, width=1, color=colors)
+        plt.xlim(xlim)
+
     fig.tight_layout()
     return fig
 
