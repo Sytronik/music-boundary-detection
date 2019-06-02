@@ -28,7 +28,7 @@ def draw_segmap(song_id: int, segmap: ndarray, sect_names: List[str] = None):
     xlim = [-0.5, x[-1] + 0.5]
 
     if sect_names:
-        fig = plt.figure(figsize=(x[-1] // 1000, 4))
+        fig = plt.figure(figsize=(x[-1] // 1000, 2.5))
         plt.subplot(2, 1, 1, title=str(song_id))
         plt.bar(x, height=1, width=1, color=colors)
         plt.xlim(xlim)
