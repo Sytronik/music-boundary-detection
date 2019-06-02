@@ -13,6 +13,7 @@ import torch.nn as nn
 # from torch.utils.tensorboard.writer import SummaryWriter
 from tensorboardX import SummaryWriter
 from torchsummary import summary
+from torch import Tensor
 from tqdm import tqdm
 
 import data_manager
@@ -24,11 +25,17 @@ from utils import draw_segmap, print_to_file
 
 # Wrapper class to run PyTorch model
 class Runner(object):
-    def __init__(self, hparams, train_size):
+    def __init__(self, hparams, train_size: int, num_classes: int, class_weight: Tensor):
         # TODO: model initialization
-        self.model = UNet(ch_in=2, ch_out=30, **hparams.model)
-
-        self.criterion = torch.nn.CrossEntropyLoss()
+        self.num_classes = num_classes
+        ch_out = num_classes if num_classes > 2 else 1
+        self.model = UNet(ch_in=2, ch_out=ch_out, **hparams.model)
+        if num_classes == 2:
+            self.sigmoid = torch.nn.Sigmoid()
+            self.criterion = torch.nn.BCELoss(weight=class_weight)
+        else:
+            self.sigmoid = False
+            self.criterion = torch.nn.CrossEntropyLoss(weight=class_weight)
 
         self.optimizer = AdamW(self.model.parameters(),
                                lr=hparams.learning_rate,
@@ -71,7 +78,6 @@ class Runner(object):
             self.device = torch.device(f'cuda:{device[0]}')
             self.out_device = out_device
 
-            self.criterion.cuda(out_device)
             if len(device) > 1:
                 self.model = nn.DataParallel(self.model,
                                              device_ids=device,
@@ -81,6 +87,9 @@ class Runner(object):
                 self.str_device = str(self.device)
 
             self.model.cuda(device[0])
+            self.criterion.cuda(out_device)
+            if self.sigmoid:
+                self.sigmoid.cuda(device[0])
             torch.cuda.set_device(device[0])
             summary_device = 'cuda'
 
@@ -123,21 +132,27 @@ class Runner(object):
             # len_x = len_x.to(self.device)
 
             out = self.model(x)  # B, C, 1, T
-            out = out.squeeze_(-2)  # B, C, T
+            if self.sigmoid:
+                out = self.sigmoid(out)[..., 0, 0, :]
+                prediction = (out > 0.5).cpu().int()
+            else:
+                out = out.squeeze_(-2)  # B, C, T
+                prediction = out.argmax(1).cpu().int()
 
             if mode != 'test':
                 loss = torch.zeros(1, device=self.out_device)
                 for ii, T in enumerate(len_x):
-                    loss += self.criterion(out[ii:ii + 1, :, :T], y[ii:ii + 1, :T])
+                    loss += self.criterion(out[ii:ii + 1, ..., :T], y[ii:ii + 1, :T])
+
                 # for T, item_y, item_out in zip(len_x, y, out):
                 #     loss += self.criterion(item_out[..., :T], item_y[..., :T]) / int(T)
             else:
                 loss = 0
-            prediction = out.argmax(1).cpu().int()
 
             acc = 0.
             for ii, T in enumerate(len_x):
-                acc += (prediction[ii:ii + 1, :T] == y_cpu[ii:ii + 1, :T]).sum().item() / T
+                corrected = (prediction[ii, :T] == y_cpu[ii, :T]).sum().item()
+                acc += corrected / T / self.num_classes
 
             # acc = self.eval(prediction, y_cpu, len_x)
 
@@ -160,7 +175,7 @@ class Runner(object):
 
             if mode != 'test':
                 loss = loss.item()
-            pbar.set_postfix_str(f'{loss:.3f}, {acc*100:.2f} %')
+            pbar.set_postfix_str(f'{loss:.3f}, {acc * 100:.2f} %')
             avg_loss += loss if mode != 'test' else 0
             avg_acc += acc
 
@@ -206,15 +221,16 @@ class Runner(object):
 
 def main():
     train_loader, valid_loader, test_loader = data_manager.get_dataloader(hparams)
-    runner = Runner(hparams, len(train_loader.dataset))
-    runner.writer.add_custom_scalars(
-        dict(
-            training=dict(
-                loss=['Multiline', ['loss/train', 'loss/valid']],
-                accuracy=['Multiline', ['accuracy/train', 'accuracy/valid']],
-            )
-        )
-    )
+    runner = Runner(hparams,
+                    len(train_loader.dataset),
+                    train_loader.dataset.num_classes,
+                    train_loader.dataset.weight)
+    runner.writer.add_custom_scalars(dict(
+        training=dict(
+            loss=['Multiline', ['loss/train', 'loss/valid']],
+            accuracy=['Multiline', ['accuracy/train', 'accuracy/valid']],
+        ),
+    ))
 
     epoch = 0
     print(f'Training on {runner.str_device}')
@@ -253,7 +269,7 @@ if __name__ == '__main__':
     hparams.parse_argument()
     if list(Path(hparams.log_dir).glob('events.out.tfevents.*')):
         while True:
-            s = input(f'{hparams.log_dir} already has tfevents. continue? (y/n)\n')
+            s = input(f'"{hparams.log_dir}" already has tfevents. continue? (y/n)\n')
             if s.lower() == 'y':
                 shutil.rmtree(hparams.log_dir)
                 os.makedirs(hparams.log_dir)
