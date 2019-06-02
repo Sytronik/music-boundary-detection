@@ -86,7 +86,7 @@ class ResidualBlock(nn.Module):
         self.cba2 = ConvBNAct(out_ch, out_ch, None, (3, 3), padding=(1, 1))
 
         self.act_fn = act_fn if last_act_fn else None
-        self.cbam = CBAM(out_ch) if use_cbam else None
+        self.cbam = CBAM(out_ch, reduction_ratio=min(16, out_ch)) if use_cbam else None
 
     def forward(self, x):
         residual = self.skipcba(x)
