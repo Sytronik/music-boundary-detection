@@ -224,7 +224,7 @@ def main():
     runner = Runner(hparams,
                     len(train_loader.dataset),
                     train_loader.dataset.num_classes,
-                    train_loader.dataset.weight)
+                    train_loader.dataset.class_weight)
     runner.writer.add_custom_scalars(dict(
         training=dict(
             loss=['Multiline', ['loss/train', 'loss/valid']],

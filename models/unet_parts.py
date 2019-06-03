@@ -121,7 +121,7 @@ class InConv(nn.Module):
         super().__init__()
         # self.block = FusionNetBlock(in_ch, out_ch, nn.ReLU(inplace=True), use_cbam=use_cbam)
         self.block = nn.Sequential(
-            ConvBNAct(out_ch, out_ch, nn.ReLU(inplace=True), (3, 3), (1, 1)),
+            ConvBNAct(in_ch, out_ch, nn.ReLU(inplace=True), (3, 3), (1, 1)),
             ConvBNAct(out_ch, out_ch, nn.ReLU(inplace=True), (3, 3), (1, 1)),
         )
         # self.conv = ResidualBlock(in_ch, out_ch)
@@ -139,7 +139,7 @@ class DownAndConv(nn.Module):
 
         # self.block = FusionNetBlock(in_ch, out_ch, nn.ReLU(inplace=True), use_cbam=use_cbam)
         self.block = nn.Sequential(
-            ConvBNAct(out_ch, out_ch, nn.ReLU(inplace=True), (3, 3), (1, 1)),
+            ConvBNAct(in_ch, out_ch, nn.ReLU(inplace=True), (3, 3), (1, 1)),
             ConvBNAct(out_ch, out_ch, nn.ReLU(inplace=True), (3, 3), (1, 1)),
         )
         # if not hidden_ch:
