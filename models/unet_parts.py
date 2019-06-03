@@ -119,7 +119,11 @@ class FusionNetBlock(nn.Module):
 class InConv(nn.Module):
     def __init__(self, in_ch: int, out_ch: int, use_cbam=False):
         super().__init__()
-        self.block = FusionNetBlock(in_ch, out_ch, nn.ReLU(inplace=True), use_cbam=use_cbam)
+        # self.block = FusionNetBlock(in_ch, out_ch, nn.ReLU(inplace=True), use_cbam=use_cbam)
+        self.block = nn.Sequential(
+            ConvBNAct(out_ch, out_ch, nn.ReLU(inplace=True), (3, 3), (1, 1)),
+            ConvBNAct(out_ch, out_ch, nn.ReLU(inplace=True), (3, 3), (1, 1)),
+        )
         # self.conv = ResidualBlock(in_ch, out_ch)
 
     def forward(self, x):
@@ -133,8 +137,11 @@ class DownAndConv(nn.Module):
         super().__init__()
         self.pool = nn.MaxPool2d((2, 2))
 
-        self.block = FusionNetBlock(in_ch, out_ch, nn.ReLU(inplace=True), use_cbam=use_cbam)
-
+        # self.block = FusionNetBlock(in_ch, out_ch, nn.ReLU(inplace=True), use_cbam=use_cbam)
+        self.block = nn.Sequential(
+            ConvBNAct(out_ch, out_ch, nn.ReLU(inplace=True), (3, 3), (1, 1)),
+            ConvBNAct(out_ch, out_ch, nn.ReLU(inplace=True), (3, 3), (1, 1)),
+        )
         # if not hidden_ch:
         #     hidden_ch = min(in_ch, out_ch) // 2
         # if not groups:
@@ -158,7 +165,11 @@ class UpAndConv(nn.Module):
         else:
             self.up = nn.ConvTranspose2d(in_ch, out_ch, (2, 2), stride=(2, 2))
 
-        self.block = FusionNetBlock(out_ch, out_ch, nn.ReLU(inplace=True), use_cbam=use_cbam)
+        # self.block = FusionNetBlock(out_ch, out_ch, nn.ReLU(inplace=True), use_cbam=use_cbam)
+        self.block = nn.Sequential(
+            ConvBNAct(out_ch, out_ch, nn.ReLU(inplace=True), (3, 3), (1, 1)),
+            ConvBNAct(out_ch, out_ch, nn.ReLU(inplace=True), (3, 3), (1, 1)),
+        )
 
         # if not hidden_ch:
         #     hidden_ch = min(in_ch, out_ch) // 2
@@ -180,7 +191,8 @@ class UpAndConv(nn.Module):
 class OutConv(nn.Module):
     def __init__(self, in_ch: int, out_ch: int):
         super().__init__()
-        self.conv1 = nn.Conv2d(in_ch, out_ch, (3, 3), padding=(1, 1))
+        # self.conv1 = nn.Conv2d(in_ch, out_ch, (3, 3), padding=(1, 1))
+        self.conv1 = nn.Conv2d(in_ch, out_ch, (1, 1))
         self.gap = nn.AdaptiveAvgPool2d((1, None))
 
     def forward(self, x):
