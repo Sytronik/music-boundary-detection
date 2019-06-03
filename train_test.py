@@ -93,8 +93,8 @@ class Runner(object):
             torch.cuda.set_device(device[0])
             summary_device = 'cuda'
 
-        self.writer = SummaryWriter(log_dir=hparams.log_dir)
-        print_to_file(Path(self.writer.log_dir, 'summary.txt'),
+        self.writer = SummaryWriter(logdir=hparams.logdir)
+        print_to_file(Path(self.writer.logdir, 'summary.txt'),
                       summary,
                       (self.model, (2, 128, 128)),
                       dict(device=summary_device)
@@ -102,7 +102,7 @@ class Runner(object):
         # summary(self.model, (2, 128, 256))
 
         # save hyperparameters
-        with Path(self.writer.log_dir, 'hparams.txt').open('w') as f:
+        with Path(self.writer.logdir, 'hparams.txt').open('w') as f:
             for var in vars(hparams):
                 value = getattr(hparams, var)
                 print(f'{var}: {value}', file=f)
@@ -202,7 +202,7 @@ class Runner(object):
         #             or self.acc_last_restart + self.stop_thr_acc > valid_acc):
         #         self.model.load_state_dict(
         #             torch.load(
-        #                 Path(self.writer.log_dir, f'{last_restart}.pt')
+        #                 Path(self.writer.logdir, f'{last_restart}.pt')
         #             )
         #         )
         #         return last_restart
@@ -212,7 +212,7 @@ class Runner(object):
         # # if epoch == self.scheduler.last_restart:
         #     if epoch > 0:
         #         torch.save(self.model.state_dict(),
-        #                    Path(self.writer.log_dir, f'{epoch}.pt'))
+        #                    Path(self.writer.logdir, f'{epoch}.pt'))
         #     self.loss_last_restart = valid_loss
         #     self.acc_last_restart = valid_acc
 
@@ -261,18 +261,18 @@ def main():
     print('Training Finished')
     # print(f'Test Accuracy: {100 * test_acc:.2f} %')
     # runner.writer.add_text('Test Accuracy', f'{100 * test_acc:.2f} %', epoch)
-    torch.save(runner.model.state_dict(), Path(runner.writer.log_dir, 'state_dict.pt'))
+    torch.save(runner.model.state_dict(), Path(runner.writer.logdir, 'state_dict.pt'))
     runner.writer.close()
 
 
 if __name__ == '__main__':
     hparams.parse_argument()
-    if list(Path(hparams.log_dir).glob('events.out.tfevents.*')):
+    if list(Path(hparams.logdir).glob('events.out.tfevents.*')):
         while True:
-            s = input(f'"{hparams.log_dir}" already has tfevents. continue? (y/n)\n')
+            s = input(f'"{hparams.logdir}" already has tfevents. continue? (y/n)\n')
             if s.lower() == 'y':
-                shutil.rmtree(hparams.log_dir)
-                os.makedirs(hparams.log_dir)
+                shutil.rmtree(hparams.logdir)
+                os.makedirs(hparams.logdir)
                 break
             elif s.lower() == 'n':
                 exit()
