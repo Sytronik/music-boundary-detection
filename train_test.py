@@ -32,10 +32,12 @@ class Runner(object):
         self.model = UNet(ch_in=2, ch_out=ch_out, **hparams.model)
         if num_classes == 2:
             self.sigmoid = torch.nn.Sigmoid()
-            self.criterion = torch.nn.BCELoss(weight=class_weight)
+            self.criterion = torch.nn.BCELoss(reduction='none')
+            self.class_weight = class_weight
         else:
             self.sigmoid = False
             self.criterion = torch.nn.CrossEntropyLoss(weight=class_weight)
+            self.class_weight = None
 
         self.optimizer = AdamW(self.model.parameters(),
                                lr=hparams.learning_rate,
@@ -141,8 +143,15 @@ class Runner(object):
 
             if mode != 'test':
                 loss = torch.zeros(1, device=self.out_device)
-                for ii, T in enumerate(len_x):
-                    loss += self.criterion(out[ii:ii + 1, ..., :T], y[ii:ii + 1, :T])
+                if self.class_weight is not None:
+                    weight = (y==1)*self.class_weight[1].item() + (y==0) * self.class_weight[0].item()
+                    weight = weight.float()
+                    for ii, T in enumerate(len_x):
+                        no_reduct = self.criterion(out[ii:ii + 1, ..., :T], y[ii:ii + 1, :T])
+                        loss += (no_reduct * weight[ii:ii+1, :T]).sum() / T
+                else:
+                    for ii, T in enumerate(len_x):
+                        loss += self.criterion(out[ii:ii + 1, ..., :T], y[ii:ii + 1, :T])
 
                 # for T, item_y, item_out in zip(len_x, y, out):
                 #     loss += self.criterion(item_out[..., :T], item_y[..., :T]) / int(T)
