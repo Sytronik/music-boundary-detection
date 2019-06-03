@@ -45,7 +45,7 @@ class HParams(object):
     s_bans: Dict[str, List[str]] = field(init=False)
 
     # summary path
-    logdir = './runs/test'
+    logdir: str = './runs/test'
 
     # Model Parameters
     model: Dict[str, Any] = field(init=False)
