@@ -7,8 +7,10 @@ Please check the device in hparams.py before you run this code.
 import os
 import shutil
 from pathlib import Path
+from typing import List
 
 import numpy as np
+from numpy import ndarray
 import torch
 import torch.nn as nn
 # from torch.utils.tensorboard.writer import SummaryWriter
@@ -38,6 +40,8 @@ class Runner(object):
             else:
                 self.criterion = torch.nn.BCELoss()
             self.class_weight = class_weight
+            self.T_6s = round(6 * hparams.sample_rate / hparams.hop_size) - 1
+            self.T_12s = round(12 * hparams.sample_rate / hparams.hop_size) - 1
         else:
             self.sigmoid = False
             self.criterion = torch.nn.CrossEntropyLoss(weight=class_weight)
@@ -113,32 +117,34 @@ class Runner(object):
                 value = getattr(hparams, var)
                 print(f'{var}: {value}', file=f)
 
-    @staticmethod
-    def predict(out):
+    def predict(self, out: ndarray, len_x: List[int]):
+        """
 
-        N_6s = round(6 * hparams.sample_rate / hparams.hop_size) - 1
-        N_12s = round(12 * hparams.sample_rate / hparams.hop_size) - 1
-
-        candid_val = []
-        candid_idx = []
-        for i in range(len(out)):
-            if i < N_6s:
-                if out[i] >= np.amax(out[:i + N_6s + 1]):
-                    candid_val.append(out[i])
-                    candid_idx.append(i)
-            else:
-                if out[i] >= np.amax(out[i - N_6s:i + N_6s + 1]):
-                    candid_val.append(out[i])
-                    candid_idx.append(i)
+        :param out: (B, T)
+        :return: length B list of boundary indexes
+        """
+        if out.ndim == 1:
+            out = [out]
 
         boundary_idx = []
-        for j in candid_idx:
-            if j < N_12s:
-                if (out[j] - 1.1 * np.mean(out[0:j + N_6s + 1])) > 0:
-                    boundary_idx.append(j)
-            else:
-                if (out[j] - 1.1 * np.mean(out[j - N_12s:j + N_6s + 1])) > 0:
-                    boundary_idx.append(j)
+        for item, T in zip(out, len_x):
+            # candid_val = []
+            candid_idx = []
+            for idx in range(T):
+                i_first = max(idx - self.T_6s, 0)
+                i_last = min(idx + self.T_6s + 1, T)
+                if item[idx] >= np.amax(item[i_first:i_last]):
+                    # candid_val.append(item[i])
+                    candid_idx.append(idx)
+
+            item_boundary_idx = []
+            for idx in candid_idx:
+                i_first = max(idx - self.T_12s, 0)
+                i_last = min(idx + self.T_6s + 1, T)
+                if item[idx] - 1.1 * np.mean(item[i_first:i_last]) > 0:
+                    item_boundary_idx.append(idx)
+
+            boundary_idx.append(np.array(item_boundary_idx))
 
         return boundary_idx
 
