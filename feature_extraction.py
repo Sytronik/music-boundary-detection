@@ -17,6 +17,7 @@ import librosa
 import numpy as np
 from numpy import ndarray
 from tqdm import tqdm
+import scipy.signal as scsig
 
 from hparams import hparams
 
@@ -54,7 +55,7 @@ def melspectrogram(y: ndarray, sr: int) -> ndarray:
 
 
 def extract_feature(song_id: int, path_audio: Path, path_annot: Path) \
-        -> Optional[Tuple[List[str], List[int], List[str], List[int]]]:
+        -> Optional[Tuple[List[str], List[int], ndarray, ndarray, ndarray, ndarray]]:
     y, _ = librosa.load(str(path_audio), sr=sample_rate, mono=False)  # 2, n
     mel = None
     # print(f'{song_id:4d}: ', end='', flush=True)
@@ -91,90 +92,107 @@ def extract_feature(song_id: int, path_audio: Path, path_annot: Path) \
             np.save(hparams.path_feature[kind_data] / f'{song_id}.npy', mel)
             # print('/', end='', flush=True)
 
-    if b_extract_output:
-        if mel is None:
-            y = np.pad(y[0], int(hparams.fft_size // 2), mode='constant')
-            mel = librosa.util.frame(y, hparams.win_size, hparams.hop_size)
-
-        # mel = melspectrogram(y, sample_rate)
-        n_frames = np.arange(mel.shape[-1] + 1)
-        t_frames = n_frames * sample_period * hparams.hop_size
-
-        t_boundaries = []
-        sections = []
-        with path_annot.open('r', newline='') as f_section:
-            annot_sect = [l for l in csv.reader(f_section, delimiter='\t') if float(l[0]) > 0]
-            for l_sect in annot_sect:
-                t = float(l_sect[0])
-                s = l_sect[1]
-                # if t == 0:
-                #     if s.lower() != 'silence' or c.lower() != 'silence':
-                #         raise Exception(song_id)
-                #     continue
-                if s.lower() == 'end':
-                    continue
-                if sections:
-                    if sections[-1] == s:
-                        continue
-                        # raise Exception(song_id)
-                    # elif sections[-1] == s ^ coarse[-1] == c:
-                    #     raise Exception(song_id)
-                t_boundaries.append(t)
-                sections.append(s)
-
-        # s_sect = str(sections).replace('\'', '').replace(',', '')
-        # print(f' {s_sect}')
-
-        # boundary label / section segmentation map / coarse structure map
-        boundary_label = []
-        binary_map = [0]
-        sect_map = ['Silence']
-        i_boundary = 0
-        for i_frame in range(len(t_frames) - 1):
-            if i_boundary == len(t_boundaries):
-                # last section
-                boundary_label.append(0)
-                sect_map.append(sect_map[-1])
-                binary_map.append(binary_map[-1])
-            elif t_boundaries[i_boundary] - t_frames[i_frame] > hparams.hop_size * sample_period:
-                # if not boundary
-                boundary_label.append(0)
-                sect_map.append(sect_map[-1])
-                binary_map.append(binary_map[-1])
-            elif (t_boundaries[i_boundary] - t_frames[i_frame]
-                  > t_frames[i_frame + 1] - t_boundaries[i_boundary]):
-                # if the next frame is closer than the current frame
-                boundary_label.append(0)
-                sect_map.append(sect_map[-1])
-                binary_map.append(binary_map[-1])
-            elif (t_boundaries[i_boundary] - t_frames[i_frame]
-                  <= t_frames[i_frame + 1] - t_boundaries[i_boundary]):
-                # if the current frame is closer than the next frame
-                boundary_label.append(1)
-                sect_map.append(sections[i_boundary])
-                binary_map.append(int(not binary_map[-1]))
-                i_boundary += 1
-            elif (t_boundaries[i_boundary] - t_frames[i_frame]
-                  < t_frames[i_frame - 1] - t_boundaries[i_boundary]):
-                # if the current frame is closer than the prev frame
-                boundary_label.append(1)
-                sect_map.append(sections[i_boundary])
-                binary_map.append(int(not binary_map[-1]))
-                i_boundary += 1
-            else:
-                raise Exception(song_id)
-
-        return sections, boundary_label, sect_map[1:], binary_map[1:]
-    else:
+    if not b_extract_output:
         return None
+
+    if mel is None:
+        y = np.pad(y[0], int(hparams.fft_size // 2), mode='constant')
+        mel = librosa.util.frame(y, hparams.win_size, hparams.hop_size)
+
+    # mel = melspectrogram(y, sample_rate)
+    n_frames = np.arange(mel.shape[-1] + 1)
+    t_frames = n_frames * sample_period * hparams.hop_size
+
+    t_boundaries = []
+    sections = []
+    with path_annot.open('r', newline='') as f_section:
+        annot_sect = [l for l in csv.reader(f_section, delimiter='\t') if float(l[0]) > 0]
+        for l_sect in annot_sect:
+            t = float(l_sect[0])
+            s = l_sect[1]
+            # if t == 0:
+            #     if s.lower() != 'silence' or c.lower() != 'silence':
+            #         raise Exception(song_id)
+            #     continue
+            if s.lower() == 'end':
+                continue
+            if sections:
+                if sections[-1] == s:
+                    continue
+                    # raise Exception(song_id)
+                # elif sections[-1] == s ^ coarse[-1] == c:
+                #     raise Exception(song_id)
+            t_boundaries.append(t)
+            sections.append(s)
+
+    # s_sect = str(sections).replace('\'', '').replace(',', '')
+    # print(f' {s_sect}')
+
+    # boundary label / section segmentation map / coarse structure map
+    boundary_label = []
+    binary_map = [0]
+    sect_map = ['Silence']
+    i_boundary = 0
+    for i_frame in range(len(t_frames) - 1):
+        if i_boundary == len(t_boundaries):
+            # last section
+            boundary_label.append(0)
+            sect_map.append(sect_map[-1])
+            binary_map.append(binary_map[-1])
+        elif t_boundaries[i_boundary] - t_frames[i_frame] > hparams.hop_size * sample_period:
+            # if not boundary
+            boundary_label.append(0)
+            sect_map.append(sect_map[-1])
+            binary_map.append(binary_map[-1])
+        elif (t_boundaries[i_boundary] - t_frames[i_frame]
+              > t_frames[i_frame + 1] - t_boundaries[i_boundary]):
+            # if the next frame is closer than the current frame
+            boundary_label.append(0)
+            sect_map.append(sect_map[-1])
+            binary_map.append(binary_map[-1])
+        elif (t_boundaries[i_boundary] - t_frames[i_frame]
+              <= t_frames[i_frame + 1] - t_boundaries[i_boundary]):
+            # if the current frame is closer than the next frame
+            boundary_label.append(1)
+            sect_map.append(sections[i_boundary])
+            binary_map.append(int(not binary_map[-1]))
+            i_boundary += 1
+        elif (t_boundaries[i_boundary] - t_frames[i_frame]
+              < t_frames[i_frame - 1] - t_boundaries[i_boundary]):
+            # if the current frame is closer than the prev frame
+            boundary_label.append(1)
+            sect_map.append(sections[i_boundary])
+            binary_map.append(int(not binary_map[-1]))
+            i_boundary += 1
+        else:
+            raise Exception(song_id)
+
+    sect_map = sect_map[1:]
+    boundary_label = np.array(boundary_label)
+    binary_map = np.array(binary_map[1:])
+
+    # boundary socre which is gaussian-filtered boundary label
+    boundary_score = np.zeros(boundary_label.shape, dtype=np.float32)  # is copied
+    boundary_index = np.where(boundary_label == 1)[0]
+    for i_boundary in boundary_index:
+        i_first = max(i_boundary - half_len_kernel, 0)
+        i_last = min(i_boundary + half_len_kernel + 1, len(boundary_score))
+        i_k_first = max(+half_len_kernel - i_boundary, 0)
+        i_k_last = half_len_kernel + min(half_len_kernel + 1, len(boundary_score) - i_boundary)
+        boundary_score[i_first:i_last] += kernel[i_k_first:i_k_last]
+
+    return sections, sect_map, binary_map, boundary_label, boundary_score, boundary_index
 
 
 def main():
     songs = []
     sect_names = {'Silence'}
-    boundary_labels = dict()
     sect_maps = dict()
+    coarse_maps = dict()
     binary_maps = dict()
+    boundary_labels = dict()
+    boundary_scores = dict()
+    boundary_indexes = dict()
 
     pool = mp.Pool(num_workers)
     # pool = mp.Pool(4)
@@ -209,12 +227,18 @@ def main():
     for song_id, result in pbar:
         if b_extract_output:
             s_song_id = str(song_id)
-            sections, boundary_label, sect_map, binary_map = result.get()
+            (
+                sections,
+                sect_map, binary_map,
+                boundary_label, boundary_score, boundary_index
+            ) = result.get()
 
             sect_names = sect_names.union(sections)
             boundary_labels[s_song_id] = boundary_label
             sect_maps[s_song_id] = sect_map
             binary_maps[s_song_id] = binary_map
+            boundary_scores[s_song_id] = boundary_score
+            boundary_indexes[s_song_id] = boundary_index
 
             pbar.write(str(sections).replace('\'', '').replace(',', ''))
         else:
@@ -222,11 +246,12 @@ def main():
 
     if b_extract_output:
         print()
-        print('save maps...')
+        print('save ground truth...')
 
         dict_sect_idx = {name: idx for idx, name in enumerate(sect_names)}
-        coarse_maps = dict()
         for s_song_id in sect_maps.keys():
+            sect_maps[s_song_id] = np.array([dict_sect_idx[s] for s in sect_maps[s_song_id]])
+
             coarse_map = []
             dict_coarse_idx = {}
             idx = 0
@@ -237,14 +262,12 @@ def main():
                 coarse_map.append(dict_coarse_idx[c])
             coarse_maps[s_song_id] = np.array(coarse_map)
 
-            boundary_labels[s_song_id] = np.array(boundary_labels[s_song_id])
-            sect_maps[s_song_id] = np.array([dict_sect_idx[s] for s in sect_maps[s_song_id]])
-            binary_maps[s_song_id] = np.array(binary_maps[s_song_id])
-
-        np.savez(path_feature / 'boundary_labels.npz', **boundary_labels)
         np.savez(path_feature / 'section_maps.npz', **sect_maps)
         np.savez(path_feature / 'coarse_maps.npz', **coarse_maps)
         np.savez(path_feature / 'binary_maps.npz', **binary_maps)
+        np.savez(path_feature / 'boundary_labels.npz', **boundary_labels)
+        np.savez(path_feature / 'boundary_scores.npz', **boundary_scores)
+        np.savez(path_feature / 'boundary_indexes.npz', **boundary_indexes)
 
         with (path_feature / 'section_names.txt').open('w') as f:
             for idx, name in enumerate(sect_names):
@@ -281,5 +304,9 @@ if __name__ == '__main__':
 
     sample_rate = hparams.sample_rate
     sample_period = 1 / sample_rate
+
+    sigma = hparams.len_gaussian_kernel / 4
+    half_len_kernel = hparams.len_gaussian_kernel // 2
+    kernel = scsig.gaussian(hparams.len_gaussian_kernel, sigma)
 
     main()
