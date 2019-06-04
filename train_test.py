@@ -121,7 +121,8 @@ class Runner(object):
     def predict(self, out: ndarray, len_x: List[int]):
         """ peak-picking prediction
 
-        :param out: (B, T)
+        :param out: (B, T) or (T,)
+        :param len_x: length B list
         :return: length B list of boundary indexes
         """
         if out.ndim == 1:
