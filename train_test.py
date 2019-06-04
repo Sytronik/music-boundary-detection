@@ -174,6 +174,8 @@ class Runner(object):
                 corrected = (prediction[ii, :T] == y_cpu[ii, :T]).sum().item()
                 acc += corrected / T / self.ch_out
 
+            acc /= len(len_x)
+
             # acc = self.eval(prediction, dataloader.dataset.boundary_indexes, len_x)
 
             if mode == 'train':
