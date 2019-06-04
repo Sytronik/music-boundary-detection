@@ -131,14 +131,15 @@ class Runner(object):
                     candid_val.append(out[i])
                     candid_idx.append(i)
 
-        threshold = []
+        boundary_idx = []
         for j in candid_idx:
             if j < N_12s:
-                threshold.append(out[j] - np.mean(out[0:j + N_6s + 1]))
+                if (out[j] - 1.1 * np.mean(out[0:j + N_6s + 1])) > 0:
+                    boundary_idx.append(j)
             else:
-                threshold.append(out[j] - np.mean(out[j - N_12s:j + N_6s + 1]))
+                if (out[j] - 1.1 * np.mean(out[j - N_12s:j + N_6s + 1])) > 0:
+                    boundary_idx.append(j)
 
-        boundary_idx = np.where(out > np.amax(threshold))
         return boundary_idx
 
     @staticmethod
