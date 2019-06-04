@@ -155,7 +155,7 @@ class Runner(object):
             if mode != 'test':
                 loss = torch.zeros(1, device=self.out_device)
                 if self.class_weight is not None:
-                    weight = (y == 1).float() * self.class_weight[1].item()
+                    weight = (y > 0).float() * self.class_weight[1].item()
                     weight += (y == 0).float() * self.class_weight[0].item()
                     for ii, T in enumerate(len_x):
                         loss_no_red = self.criterion(out[ii:ii + 1, ..., :T], y[ii:ii + 1, :T])

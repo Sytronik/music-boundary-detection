@@ -170,15 +170,15 @@ class SALAMIDataset(Dataset):
                 raise Exception
             self.dtype_y = torch.int64 if self.num_classes > 2 else torch.float32
 
-            if hparams.output_type == 'boundary_scores':
-                self.class_weight = None
-            else:
-                self.class_weight = np.zeros(self.num_classes, dtype=np.float32)
-                for y in self.all_y.values():
-                    for label in y:
+            self.class_weight = np.zeros(self.num_classes, dtype=np.float32)
+            for y in self.all_y.values():
+                for label in y:
+                    if hparams.output_type == 'boundary_scores':
+                        self.class_weight[int(label > 0)] += 1
+                    else:
                         self.class_weight[label] += 1
-                self.class_weight = self.class_weight.max() / self.class_weight
-                self.class_weight = torch.from_numpy(self.class_weight)
+            self.class_weight = self.class_weight.max() / self.class_weight
+            self.class_weight = torch.from_numpy(self.class_weight)
         else:
             try:
                 self.normalization = kwargs['normalization']
