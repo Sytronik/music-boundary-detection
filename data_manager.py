@@ -138,6 +138,7 @@ class SALAMIDataset(Dataset):
         self.all_files = sorted(self.all_files)
         # self.all_files = list(np.random.permutation(self.all_files).tolist())
         self.all_y = dict(**np.load(self._PATH / f'{hparams.output_type}.npz'))
+        self.boundary_indexes = dict(**np.load(self._PATH / 'boundary_indexes.npz'))
         self.sect_names = []
 
         if kind_data == 'train':
@@ -162,18 +163,22 @@ class SALAMIDataset(Dataset):
                         max_cls_idx = max_coarse
                 self.num_classes = max_cls_idx + 1
             elif (hparams.output_type == 'binary_maps'
-                  or hparams.output_type == 'boundary_labels'):
+                  or hparams.output_type == 'boundary_labels'
+                  or hparams.output_type == 'boundary_scores'):
                 self.num_classes = 2
             else:
                 raise Exception
             self.dtype_y = torch.int64 if self.num_classes > 2 else torch.float32
 
-            self.class_weight = np.zeros(self.num_classes, dtype=np.float32)
-            for y in self.all_y.values():
-                for label in y:
-                    self.class_weight[label] += 1
-            self.class_weight = self.class_weight.max() / self.class_weight
-            self.class_weight = torch.from_numpy(self.class_weight)
+            if hparams.output_type == 'boundary_scores':
+                self.class_weight = None
+            else:
+                self.class_weight = np.zeros(self.num_classes, dtype=np.float32)
+                for y in self.all_y.values():
+                    for label in y:
+                        self.class_weight[label] += 1
+                self.class_weight = self.class_weight.max() / self.class_weight
+                self.class_weight = torch.from_numpy(self.class_weight)
         else:
             try:
                 self.normalization = kwargs['normalization']

@@ -27,12 +27,15 @@ from utils import draw_segmap, print_to_file
 class Runner(object):
     def __init__(self, hparams, train_size: int, num_classes: int, class_weight: Tensor):
         # TODO: model initialization
-        self.num_classes = num_classes
-        ch_out = num_classes if num_classes > 2 else 1
-        self.model = UNet(ch_in=2, ch_out=ch_out, **hparams.model)
+        # self.num_classes = num_classes
+        self.ch_out = num_classes if num_classes > 2 else 1
+        self.model = UNet(ch_in=2, ch_out=self.ch_out, **hparams.model)
         if num_classes == 2:
             self.sigmoid = torch.nn.Sigmoid()
-            self.criterion = torch.nn.BCELoss(reduction='none')
+            if class_weight is not None:
+                self.criterion = torch.nn.BCELoss(reduction='none')
+            else:
+                self.criterion = torch.nn.BCELoss()
             self.class_weight = class_weight
         else:
             self.sigmoid = False
@@ -127,23 +130,26 @@ class Runner(object):
         pbar = tqdm(dataloader, desc=f'{mode} {epoch:3d}', postfix='-', dynamic_ncols=True)
 
         for i_batch, (x, y, len_x, ids) in enumerate(pbar):
+            # data
             y_cpu = y.int()
             x = x.to(self.device)  # B, C, F, T
             x = dataloader.dataset.normalization.normalize_(x)
             y = y.to(self.out_device)  # B, T
             # len_x = len_x.to(self.device)
 
+            # forward
             out = self.model(x)  # B, C, 1, T
-            if self.sigmoid:
-                out = self.sigmoid(out)[..., 0, 0, :]
+            if self.ch_out == 1:
+                out = self.sigmoid(out)[..., 0, 0, :]  # B, T
                 prediction = (out > 0.5).cpu().int()
             else:
                 out = out.squeeze_(-2)  # B, C, T
                 prediction = out.argmax(1).cpu().int()
 
+            # loss
             if mode != 'test':
                 loss = torch.zeros(1, device=self.out_device)
-                if self.criterion.reduction == 'none':
+                if self.class_weight is not None:
                     weight = (y == 1).float() * self.class_weight[1].item()
                     weight += (y == 0).float() * self.class_weight[0].item()
                     for ii, T in enumerate(len_x):
