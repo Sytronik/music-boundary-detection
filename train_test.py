@@ -167,7 +167,7 @@ class Runner(object):
             acc = 0.
             for ii, T in enumerate(len_x):
                 corrected = (prediction[ii, :T] == y_cpu[ii, :T]).sum().item()
-                acc += corrected / T / self.num_classes
+                acc += corrected / T / self.ch_out
 
             # acc = self.eval(prediction, y_cpu, len_x)
 
