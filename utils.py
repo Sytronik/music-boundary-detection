@@ -28,10 +28,12 @@ def draw_segmap(song_id: int, segmap: ndarray, sect_names: List[str] = None):
     xlim = [-0.5, x[-1] + 0.5]
 
     if sect_names:
-        fig = plt.figure(figsize=(x[-1] // 1000, 2.5))
+        fig = plt.figure(figsize=(x[-1] // 1000, 3.5))
         plt.subplot(2, 1, 1, title=str(song_id))
         plt.bar(x, height=1, width=1, color=colors)
         plt.xlim(xlim)
+        plt.xlabel('time frame index')
+        plt.yticks([])
 
         n_labels = len(sect_names)
         x_cbar = np.arange(n_labels)
@@ -40,12 +42,28 @@ def draw_segmap(song_id: int, segmap: ndarray, sect_names: List[str] = None):
         plt.bar(x_cbar, height=1, width=1, color=draw_segmap.cmap[:n_labels])
         plt.xlim(xlim_cbar)
         plt.xticks(x_cbar, sect_names, rotation='vertical')
+        plt.yticks([])
     else:
-        fig = plt.figure(figsize=(x[-1] // 1000, 1))
+        fig = plt.figure(figsize=(x[-1] // 1000, 1.5))
         plt.title(str(song_id))
         plt.bar(x, height=1, width=1, color=colors)
         plt.xlim(xlim)
+        plt.yticks([])
 
+    fig.tight_layout()
+    return fig
+
+
+def draw_lineplot(song_id: int, boundary_score: ndarray):
+    x = np.arange(len(boundary_score))
+    fig = plt.figure(figsize=(x[-1] // 1000, 2))
+    plt.plot(x, boundary_score)
+    plt.title(str(song_id))
+    ax = plt.gca()
+    ax.set_yticks([0, 0.5, 1])
+    ax.grid(True, axis='y')
+    ax.set_xlabel('time frame index')
+    # ax.set_ylabel('boundary score')
     fig.tight_layout()
     return fig
 

@@ -8,6 +8,7 @@ import os
 import shutil
 from pathlib import Path
 
+import numpy as np
 import torch
 import torch.nn as nn
 # from torch.utils.tensorboard.writer import SummaryWriter
@@ -20,7 +21,7 @@ import data_manager
 from adamwr import AdamW, CosineLRWithRestarts
 from hparams import hparams
 from models import UNet
-from utils import draw_segmap, print_to_file
+from utils import draw_segmap, print_to_file, draw_lineplot
 
 
 # Wrapper class to run PyTorch model
@@ -119,7 +120,6 @@ class Runner(object):
         pass
 
     # Running model for train, test and validation.
-    # mode: 'train' for training, 'eval' for validation and test
     def run(self, dataloader, mode, epoch):
         self.model.train() if mode == 'train' else self.model.eval()
 
@@ -142,6 +142,7 @@ class Runner(object):
             if self.ch_out == 1:
                 out = self.sigmoid(out)[..., 0, 0, :]  # B, T
                 prediction = (out > 0.5).cpu().int()
+                # prediction = predict(out.cpu().int())
             else:
                 out = out.squeeze_(-2)  # B, C, T
                 prediction = out.argmax(1).cpu().int()
@@ -176,8 +177,18 @@ class Runner(object):
                 loss.backward()
                 self.optimizer.step()
                 self.scheduler.batch_step()
-            else:
-                if i_batch == 0:
+            elif i_batch == 0:
+                if self.ch_out == 1:
+                    out_0_np = out[0, :len_x[0]].detach().cpu().numpy()
+                    fig = draw_lineplot(ids[0], out_0_np)
+                    self.writer.add_figure(f'{mode}/out', fig, epoch)
+                    np.save(Path(self.writer.logdir, f'{ids[0]}_{epoch}.npy'), out_0_np)
+                    if epoch == 0:
+                        y_0_np = y_cpu[0, :len_x[0]].numpy()
+                        fig = draw_lineplot(ids[0], y_0_np)
+                        self.writer.add_figure(f'{mode}/truth', fig, epoch)
+                        np.save(Path(self.writer.logdir, f'{ids[0]}_truth.npy'), y_0_np)
+                else:
                     # y_cpu 랑 prediction을 matplotlib 으로 visualize하는 함수를 호출
                     pred_0_np = prediction[0, :len_x[0]].numpy()
                     fig = draw_segmap(ids[0], pred_0_np)
