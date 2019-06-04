@@ -209,7 +209,6 @@ class Runner(object):
                 for ii, T in enumerate(len_x):
                     corrected = (prediction[ii, :T] == y_np[ii, :T]).sum().item()
                     acc += corrected / T / self.ch_out
-                acc /= len(len_x)
 
             if mode == 'train':
                 self.optimizer.zero_grad()
@@ -237,7 +236,7 @@ class Runner(object):
 
             if mode != 'test':
                 loss = loss.item()
-            pbar.set_postfix_str(f'{loss:.3f}, {acc * 100:.2f} %')
+            pbar.set_postfix_str(f'{loss:.3f}, {acc / len(len_x) * 100:.2f} %')
             avg_loss += loss if mode != 'test' else 0
             avg_acc += acc
 
