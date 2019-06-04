@@ -139,6 +139,7 @@ class Runner(object):
                 threshold.append(out[j] - np.mean(out[j - N_12s:j + N_6s + 1]))
 
         boundary_idx = np.where(out > np.amax(threshold))
+        return boundary_idx
 
     @staticmethod
     def eval(prediction, truth):
