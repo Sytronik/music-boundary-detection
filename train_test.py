@@ -149,7 +149,7 @@ class Runner(object):
         return boundary_idx
 
     @staticmethod
-    def eval(prediction, truth):
+    def eval(prediction: List[ndarray], truth: List[ndarray]):
         # TODO: evaluation using mir_eval
         pass
 
@@ -163,9 +163,9 @@ class Runner(object):
         print()
         pbar = tqdm(dataloader, desc=f'{mode} {epoch:3d}', postfix='-', dynamic_ncols=True)
 
-        for i_batch, (x, y, len_x, ids) in enumerate(pbar):
+        for i_batch, (x, y, boundary_idx, len_x, ids) in enumerate(pbar):
             # data
-            y_cpu = y.int()
+            y_np = y.int().numpy()
             x = x.to(self.device)  # B, C, F, T
             x = dataloader.dataset.normalization.normalize_(x)
             y = y.to(self.out_device)  # B, T
@@ -175,11 +175,8 @@ class Runner(object):
             out = self.model(x)  # B, C, 1, T
             if self.ch_out == 1:
                 out = self.sigmoid(out)[..., 0, 0, :]  # B, T
-                prediction = (out > 0.5).cpu().int()
-                # prediction = predict(out.cpu().int())
             else:
                 out = out.squeeze_(-2)  # B, C, T
-                prediction = out.argmax(1).cpu().int()
 
             # loss
             if mode != 'test':
@@ -199,14 +196,18 @@ class Runner(object):
             else:
                 loss = 0
 
-            acc = 0.
-            for ii, T in enumerate(len_x):
-                corrected = (prediction[ii, :T] == y_cpu[ii, :T]).sum().item()
-                acc += corrected / T / self.ch_out
-
-            acc /= len(len_x)
-
-            # acc = self.eval(prediction, dataloader.dataset.boundary_indexes, len_x)
+            if self.ch_out == 1:
+                # prediction = (out > 0.5).cpu().int()
+                prediction = self.predict(out.detach().cpu().numpy(), len_x)
+                # acc = self.eval(prediction, boundary_idx)
+                acc = 0.
+            else:
+                prediction = out.argmax(1).cpu().int().numpy()
+                acc = 0.
+                for ii, T in enumerate(len_x):
+                    corrected = (prediction[ii, :T] == y_np[ii, :T]).sum().item()
+                    acc += corrected / T / self.ch_out
+                acc /= len(len_x)
 
             if mode == 'train':
                 self.optimizer.zero_grad()
@@ -214,23 +215,20 @@ class Runner(object):
                 self.optimizer.step()
                 self.scheduler.batch_step()
             elif i_batch == 0:
+                pred_0_np = prediction[0, :len_x[0]]
+                y_0_np = y_np[0, :len_x[0]]
                 if self.ch_out == 1:
                     out_0_np = out[0, :len_x[0]].detach().cpu().numpy()
-                    fig = draw_lineplot(ids[0], out_0_np)
+                    fig = draw_lineplot(out_0_np, pred_0_np, y_0_np, ids[0])
                     self.writer.add_figure(f'{mode}/out', fig, epoch)
                     np.save(Path(self.writer.logdir, f'{ids[0]}_{epoch}.npy'), out_0_np)
                     if epoch == 0:
-                        y_0_np = y_cpu[0, :len_x[0]].numpy()
-                        fig = draw_lineplot(ids[0], y_0_np)
-                        self.writer.add_figure(f'{mode}/truth', fig, epoch)
                         np.save(Path(self.writer.logdir, f'{ids[0]}_truth.npy'), y_0_np)
                 else:
                     # y_cpu 랑 prediction을 matplotlib 으로 visualize하는 함수를 호출
-                    pred_0_np = prediction[0, :len_x[0]].numpy()
                     fig = draw_segmap(ids[0], pred_0_np)
                     self.writer.add_figure(f'{mode}/prediction', fig, epoch)
                     if epoch == 0:
-                        y_0_np = y_cpu[0, :len_x[0]].numpy()
                         fig = draw_segmap(ids[0], y_0_np, dataloader.dataset.sect_names)
                         self.writer.add_figure(f'{mode}/truth', fig, epoch)
                 # all_pred.append(prediction.numpy())

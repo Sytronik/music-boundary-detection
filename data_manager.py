@@ -189,31 +189,42 @@ class SALAMIDataset(Dataset):
             except KeyError:
                 raise Exception(kwargs)
 
-    def __getitem__(self, idx: int) -> Tuple[Tensor, Tensor, int, int]:
+        self.all_y = {k: torch.tensor(v, dtype=self.dtype_y) for k, v in self.all_y.items()}
+
+    def __getitem__(self, idx: int) -> Tuple:
         """
 
         :param idx:
-        :return: (x, y, len_x, song_id)
+        :return: (x, y, boundary_idx, len_x, song_id)
             x: tensor with size (F, T)
             y: tensor with size (T,)
+            boundary_idx: ndarray
             len_x: an integer T
             song_id:
         """
 
         # open feature file and return
         f = self.all_files[idx]
-        song_id = int(f.name.split('_')[0])
+        s_song_id = f.name.split('_')[0]
+
         x = torch.tensor(np.load(f), dtype=torch.float32)
-        y = torch.tensor(self.all_y[f.name.split('_')[0]], dtype=self.dtype_y)
+        y = self.all_y[s_song_id]
+        boundary_idx = self.boundary_indexes[s_song_id]
         len_x = x.shape[2]
-        # y = y[:len_x]
-        return x, y, len_x, song_id
+        song_id = int(s_song_id)
+
+        return x, y, boundary_idx, len_x, song_id
 
     def __len__(self):
         return len(self.all_files)
 
     @staticmethod
-    def pad_collate(batch):
+    def pad_collate(batch: List[Tuple]):
+        """
+
+        :param batch:
+        :return:
+        """
         # stack samples with padding
         batch_x = [item[0].permute(2, 0, 1) for item in batch]
         batch_x = pad_sequence(batch_x, batch_first=True)  # B, T, C, F
@@ -222,12 +233,12 @@ class SALAMIDataset(Dataset):
         batch_y = [item[1] for item in batch]
         batch_y = pad_sequence(batch_y, batch_first=True)  # B, T
 
-        # len_x = torch.tensor([item[2] for item in batch], dtype=torch.float32)
-        # len_x = len_x.unsqueeze(-1)  # B, 1
-        len_x = [item[2] for item in batch]
-        batch_ids = [item[3] for item in batch]
+        batch_b_idxs = [item[2] for item in batch]
 
-        return batch_x, batch_y, len_x, batch_ids
+        len_xs = [item[3] for item in batch]
+        batch_ids = [item[4] for item in batch]
+
+        return batch_x, batch_y, batch_b_idxs, len_xs, batch_ids
 
     @classmethod
     def split(cls, dataset, ratio: Sequence[float]) -> Sequence:

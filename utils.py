@@ -54,12 +54,16 @@ def draw_segmap(song_id: int, segmap: ndarray, sect_names: List[str] = None):
     return fig
 
 
-def draw_lineplot(song_id: int, boundary_score: ndarray):
-    x = np.arange(len(boundary_score))
+def draw_lineplot(score: ndarray, prediction: ndarray, truth: ndarray, song_id: int):
+    x = np.arange(len(score))
     fig = plt.figure(figsize=(x[-1] // 1000, 2))
-    plt.plot(x, boundary_score)
+    plt.plot(x, score)
     plt.title(str(song_id))
     ax = plt.gca()
+    ax.vlines(x=prediction, ymin=0, ymax=1, colors='r', label='prediction')
+    ax.vlines(x=truth, ymin=0, ymax=1, colors='g', label='truth')
+    ax.legend()
+    # ax.set_xticks(truth)
     ax.set_yticks([0, 0.5, 1])
     ax.grid(True, axis='y')
     ax.set_xlabel('time frame index')
