@@ -47,10 +47,11 @@ class HParams(object):
     s_bans: Dict[str, List[str]] = field(init=False)
 
     # summary path
-    logdir: str = './runs/test'
+    logdir: str = './runs/score'
 
     # Model Parameters
     model: Dict[str, Any] = field(init=False)
+    thrs_pred: float = 1.1
 
     # Training Parameters
     scheduler: Dict[str, Any] = field(init=False)
@@ -58,12 +59,12 @@ class HParams(object):
     batch_size: int = 2
     num_epochs: int = 100
     learning_rate: float = 1e-4
-    weight_decay: float = 0
+    weight_decay: float = 1e-3
 
     # Device-dependent Parameters
     # 'cpu', 'cuda:n', the cuda device no., or the tuple of the cuda device no.
-    device: Union[int, str, Sequence[str], Sequence[int]] = 'cpu'
-    out_device: Union[int, str] = 3
+    device: Union[int, str, Sequence[str], Sequence[int]] = (0, 1)
+    out_device: Union[int, str] = 1
     num_workers: int = 2
 
     def __post_init__(self):
@@ -73,17 +74,20 @@ class HParams(object):
         self.path_feature = dict(train=Path('/salami-data-public/feature'),
                                  test=Path('/SOUNDLAB_MBD/feature'))
 
+        # self.bans = dict(pitchstep=[-1, 1],
+        #                  noise_db=[-24, -30, -36],
+        #                  max_F_rm=[9, 15])
         self.bans = dict(pitchstep=[-1, 1],
-                         noise_db=[-24, -30, -36],
-                         max_F_rm=[9, 15])
+                         noise_db=[-30, -36],
+                         max_F_rm=[9])
 
         self.s_bans = {k: [str(item) for item in v] for k, v in self.bans.items()}
 
-        self.model = dict(ch_base=4,
-                          depth=2,
+        self.model = dict(ch_base=8,
+                          depth=4,
                           use_cbam=False,
                           )
-        self.scheduler = dict(restart_period=10,
+        self.scheduler = dict(restart_period=4,
                               t_mult=2,
                               eta_threshold=1.5,
                               )

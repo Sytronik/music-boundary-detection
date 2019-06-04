@@ -42,6 +42,7 @@ class Runner(object):
             self.class_weight = class_weight
             self.T_6s = round(6 * hparams.sample_rate / hparams.hop_size) - 1
             self.T_12s = round(12 * hparams.sample_rate / hparams.hop_size) - 1
+            self.thrs_pred = hparams.thrs_pred
         else:
             self.sigmoid = False
             self.criterion = torch.nn.CrossEntropyLoss(weight=class_weight)
@@ -118,7 +119,7 @@ class Runner(object):
                 print(f'{var}: {value}', file=f)
 
     def predict(self, out: ndarray, len_x: List[int]):
-        """
+        """ peak-picking prediction
 
         :param out: (B, T)
         :return: length B list of boundary indexes
@@ -141,7 +142,7 @@ class Runner(object):
             for idx in candid_idx:
                 i_first = max(idx - self.T_12s, 0)
                 i_last = min(idx + self.T_6s + 1, T)
-                if item[idx] - 1.1 * np.mean(item[i_first:i_last]) > 0:
+                if item[idx] - self.thrs_pred * np.mean(item[i_first:i_last]) > 0:
                     item_boundary_idx.append(idx)
 
             boundary_idx.append(np.array(item_boundary_idx))
