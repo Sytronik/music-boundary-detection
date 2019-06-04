@@ -113,9 +113,13 @@ class Runner(object):
                 value = getattr(hparams, var)
                 print(f'{var}: {value}', file=f)
 
-    # Accuracy function works like loss function in PyTorch
     @staticmethod
-    def eval(source, target, Ts):
+    def predict(out):
+        # TODO: return prediction of class
+        pass
+
+    @staticmethod
+    def eval(prediction, truth):
         # TODO: evaluation using mir_eval
         pass
 
@@ -170,7 +174,7 @@ class Runner(object):
                 corrected = (prediction[ii, :T] == y_cpu[ii, :T]).sum().item()
                 acc += corrected / T / self.ch_out
 
-            # acc = self.eval(prediction, y_cpu, len_x)
+            # acc = self.eval(prediction, dataloader.dataset.boundary_indexes, len_x)
 
             if mode == 'train':
                 self.optimizer.zero_grad()
