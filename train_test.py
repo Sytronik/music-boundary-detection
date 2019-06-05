@@ -13,6 +13,7 @@ import numpy as np
 from numpy import ndarray
 import torch
 import torch.nn as nn
+import mir_eval
 # from torch.utils.tensorboard.writer import SummaryWriter
 from tensorboardX import SummaryWriter
 from torchsummary import summary
@@ -151,9 +152,22 @@ class Runner(object):
         return boundary_idx
 
     @staticmethod
-    def eval(prediction: List[ndarray], truth: List[ndarray]):
-        # TODO: evaluation using mir_eval
-        pass
+    def eval(prediction: List[ndarray], truth: List[ndarray], len_x: List[int]):
+        acc = np.array([0., 0., 0.])
+        for T, item_pred, item_truth in zip(len_x, prediction, truth):
+            pred_interval = np.zeros((len(item_pred) + 1, 2), dtype=np.int)
+            pred_interval[1:, 0] = item_pred
+            pred_interval[:-1, 1] = item_pred
+            pred_interval[-1, 1] = T
+
+            truth_interval = np.zeros((len(item_truth) + 1, 2), dtype=np.int)
+            truth_interval[1:, 0] = item_truth
+            truth_interval[:-1, 1] = item_truth
+            truth_interval[-1, 1] = T
+
+            eval_result = mir_eval.segment.detection(truth_interval, pred_interval)
+            acc += np.array(eval_result)
+        return acc
 
     # Running model for train, test and validation.
     def run(self, dataloader, mode, epoch):
@@ -201,8 +215,8 @@ class Runner(object):
             if self.ch_out == 1:
                 # prediction = (out > 0.5).cpu().int()
                 prediction = self.predict(out.detach().cpu().numpy(), len_x)
-                # acc = self.eval(prediction, boundary_idx)
-                acc = 0.
+                acc = self.eval(prediction, boundary_idx, len_x)
+
             else:
                 prediction = out.argmax(1).cpu().int().numpy()
                 acc = 0.
@@ -236,7 +250,8 @@ class Runner(object):
 
             if mode != 'test':
                 loss = loss.item()
-            pbar.set_postfix_str(f'{loss:.3f}, {acc / len(len_x) * 100:.2f} %')
+            s_acc = np.array2string(acc, precision=3) if type(acc) == ndarray else f'{acc:.3f}'
+            pbar.set_postfix_str(f'{loss:.3f}, {s_acc}')
             avg_loss += loss if mode != 'test' else 0
             avg_acc += acc
 
@@ -249,7 +264,7 @@ class Runner(object):
         #     fig = plot_confusion_matrix(dataloader.dataset.y, all_pred, hparams.genres)
         #     self.writer.add_figure(f'confmat/{mode}', fig, epoch)
 
-        return avg_loss, avg_acc
+        return avg_loss, avg_acc, avg_precision, avg_recall, avg_fscore
 
     # Early stopping function for given validation loss
     def early_stop(self, epoch, train_acc, valid_acc, valid_loss):
@@ -298,13 +313,19 @@ def main():
     for epoch in range(hparams.num_epochs):
         # runner.writer.add_scalar('lr', runner.optimizer.param_groups[0]['lr'], epoch)
 
-        train_loss, train_acc = runner.run(train_loader, 'train', epoch)
+        train_loss, train_acc, train_precision, train_recall, train_fscore = runner.run(train_loader, 'train', epoch)
         runner.writer.add_scalar('loss/train', train_loss, epoch)
         runner.writer.add_scalar('accuracy/train', train_acc, epoch)
+        runner.writer.add_scalar('precision/train', train_acc, epoch)
+        runner.writer.add_scalar('recall/train', train_acc, epoch)
+        runner.writer.add_scalar('fscore/train', train_acc, epoch)
 
-        valid_loss, valid_acc = runner.run(valid_loader, 'valid', epoch)
+        valid_loss, valid_acc, valid_precision, valid_recall, valid_fscore = runner.run(valid_loader, 'valid', epoch)
         runner.writer.add_scalar('loss/valid', valid_loss, epoch)
         runner.writer.add_scalar('accuracy/valid', valid_acc, epoch)
+        runner.writer.add_scalar('precision/valid', valid_acc, epoch)
+        runner.writer.add_scalar('recall/valid', valid_acc, epoch)
+        runner.writer.add_scalar('fscore/valid', valid_acc, epoch)
 
         # print(f'[Epoch {epoch:2d}/{hparams.num_epochs:3d}] '
         #       f'[Train Loss: {train_loss:.4f}] '
