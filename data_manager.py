@@ -3,7 +3,6 @@ data_manager.py
 
 A file that loads saved features and convert them into PyTorch DataLoader.
 """
-import csv
 import multiprocessing as mp
 from copy import copy
 from pathlib import Path
@@ -67,15 +66,15 @@ class Normalization:
             queue_data = manager.Queue()
             pool_loader.starmap_async(cls._load_data,
                                       [(f, queue_data) for f in all_files])
-            result = [None] * len(all_files)
-            for idx in tqdm(range(len(all_files)), desc='mean', dynamic_ncols=True):
+            result: List[mp.pool.AsyncResult] = []
+            for _ in tqdm(range(len(all_files)), desc='mean', dynamic_ncols=True):
                 data = queue_data.get()
-                result[idx] = pool_calc.apply_async(
+                result.append(pool_calc.apply_async(
                     cls._calc_per_data,
                     (data, list_fn)
-                )
+                ))
 
-        result = [item.get() for item in result]
+        result: List[Dict] = [item.get() for item in result]
         print()
 
         sum_size = np.sum([item[np.size] for item in result])
@@ -89,17 +88,17 @@ class Normalization:
             queue_data = manager.Queue()
             pool_loader.starmap_async(cls._load_data,
                                       [(f, queue_data) for f in all_files])
-            result = [None] * len(all_files)
+            result: List[mp.pool.AsyncResult] = []
             for idx in tqdm(range(len(all_files)), desc='std', dynamic_ncols=True):
                 data = queue_data.get()
-                result[idx] = pool_calc.apply_async(
+                result.append(pool_calc.apply_async(
                     cls._calc_per_data,
                     (data, (cls._sq_dev,), (mean,))
-                )
+                ))
 
         pool_loader.close()
         pool_calc.close()
-        result = [item.get() for item in result]
+        result: List[Dict] = [item.get() for item in result]
         print()
 
         sum_sq_dev = np.sum([item[cls._sq_dev] for item in result], axis=0)
@@ -112,6 +111,7 @@ class Normalization:
     def save(self, fname: Path):
         np.savez(fname, mean=self.mean.data[ndarray], std=self.std.data[ndarray])
 
+    # normalize and denormalize functions can accept a ndarray or a tensor.
     def normalize(self, a):
         return (a - self.mean.get_like(a)) / self.std.get_like(a)
 
@@ -134,13 +134,25 @@ class Normalization:
 class SALAMIDataset(Dataset):
     def __init__(self, kind_data: str, hparams, **kwargs):
         self._PATH: Path = hparams.path_feature[kind_data]
-        self.all_files: List[Path] = [f for f in self._PATH.glob('*.npy') if not hparams.is_banned(f)]
+
+        self.all_files: List[Path] = [
+            f for f in self._PATH.glob('*.npy') if not hparams.is_banned(f)
+        ]
         self.all_files = sorted(self.all_files)
         # self.all_files = list(np.random.permutation(self.all_files).tolist())
-        self.all_y = dict(**np.load(self._PATH / f'{hparams.output_type}.npz'))
-        self.boundary_indexes = dict(**np.load(self._PATH / 'boundary_indexes.npz'))
-        self.sect_names = []
 
+        self.all_ys = dict(**np.load(self._PATH / f'{hparams.output_type}.npz'))
+        self.all_boundaries = dict(**np.load(self._PATH / 'boundary_indexes.npz'))
+        for s_song_id, boundary_idx in self.all_boundaries.items():
+            length = len(boundary_idx)
+            boundary_interval = np.zeros((length, 2))
+            boundary_interval[1:, 0] = boundary_idx
+            boundary_interval[:-1, 1] = boundary_idx
+            boundary_interval[-1, 1] = len(self.all_ys[s_song_id])
+            boundary_interval *= hparams.hop_size / hparams.sample_rate
+            self.all_boundaries[s_song_id] = boundary_interval
+
+        self.sect_names = []
         if kind_data == 'train':
             f_normconst = self._PATH / 'normconst.npz'
             if f_normconst.exists() and not hparams.refresh_normconst:
@@ -150,6 +162,7 @@ class SALAMIDataset(Dataset):
                 self.normalization.save(f_normconst)
 
             if hparams.output_type == 'section_maps':
+                # section names
                 with (self._PATH / 'section_names.txt').open('r') as f:
                     for line in f.readlines():
                         line = line.split(': ')
@@ -157,7 +170,7 @@ class SALAMIDataset(Dataset):
                 self.num_classes = len(self.sect_names)
             elif hparams.output_type == 'coarse_maps':
                 max_cls_idx = 0
-                for coarse_map in self.all_y.values():
+                for coarse_map in self.all_ys.values():
                     max_coarse = coarse_map.max()
                     if max_cls_idx < max_coarse:
                         max_cls_idx = max_coarse
@@ -170,8 +183,9 @@ class SALAMIDataset(Dataset):
                 raise Exception
             self.dtype_y = torch.int64 if self.num_classes > 2 else torch.float32
 
+            # Calculate weight per class using no. of samples per class
             self.class_weight = np.zeros(self.num_classes, dtype=np.float32)
-            for y in self.all_y.values():
+            for y in self.all_ys.values():
                 for label in y:
                     if hparams.output_type.startswith('boundary_scores'):
                         self.class_weight[int(label > 0)] += 1
@@ -189,7 +203,8 @@ class SALAMIDataset(Dataset):
             except KeyError:
                 raise Exception(kwargs)
 
-        self.all_y = {k: torch.tensor(v, dtype=self.dtype_y) for k, v in self.all_y.items()}
+        # convert ys to tensors.
+        self.all_ys = {k: torch.tensor(v, dtype=self.dtype_y) for k, v in self.all_ys.items()}
 
     def __getitem__(self, idx: int) -> Tuple:
         """
@@ -198,7 +213,7 @@ class SALAMIDataset(Dataset):
         :return: (x, y, boundary_idx, len_x, song_id)
             x: tensor with size (F, T)
             y: tensor with size (T,)
-            boundary_idx: ndarray
+            boundaries: ndarray with size (num_boundary, 2)
             len_x: an integer T
             song_id:
         """
@@ -208,18 +223,18 @@ class SALAMIDataset(Dataset):
         s_song_id = f.name.split('_')[0]
 
         x = torch.tensor(np.load(f), dtype=torch.float32)
-        y = self.all_y[s_song_id]
-        boundary_idx = self.boundary_indexes[s_song_id]
+        y = self.all_ys[s_song_id]
+        boundaries = self.all_boundaries[s_song_id]
         len_x = x.shape[2]
         song_id = int(s_song_id)
 
-        return x, y, boundary_idx, len_x, song_id
+        return x, y, boundaries, len_x, song_id
 
     def __len__(self):
         return len(self.all_files)
 
     @staticmethod
-    def pad_collate(batch: List[Tuple]):
+    def pad_collate(batch: List[Tuple]) -> Tuple:
         """
 
         :param batch:
@@ -233,12 +248,12 @@ class SALAMIDataset(Dataset):
         batch_y = [item[1] for item in batch]
         batch_y = pad_sequence(batch_y, batch_first=True)  # B, T
 
-        batch_b_idxs = [item[2] for item in batch]
+        batch_boundaries = [item[2] for item in batch]
 
         len_xs = [item[3] for item in batch]
         batch_ids = [item[4] for item in batch]
 
-        return batch_x, batch_y, batch_b_idxs, len_xs, batch_ids
+        return batch_x, batch_y, batch_boundaries, len_xs, batch_ids
 
     @classmethod
     def split(cls, dataset, ratio: Sequence[float]) -> Sequence:

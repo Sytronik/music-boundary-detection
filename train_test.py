@@ -137,7 +137,7 @@ class Runner(object):
         if out.ndim == 1:
             out = [out]
 
-        boundary_idx = []
+        boundaries = []
         for item, T in zip(out, len_x):
             # candid_val = []
             candid_idx = []
@@ -148,36 +148,18 @@ class Runner(object):
                     # candid_val.append(item[i])
                     candid_idx.append(idx)
 
-            item_boundary_idx = []
+            boundary_idx = []
             for idx in candid_idx:
                 i_first = max(idx - self.T_12s, 0)
                 i_last = min(idx + self.T_6s + 1, T)
                 if item[idx] - self.thrs_pred * np.mean(item[i_first:i_last]) > 0:
-                    item_boundary_idx.append(idx)
+                    boundary_idx.append(idx)
+            boundary_interval = np.array([[0]+boundary_idx, boundary_idx+[T]]).T
+            boundary_interval *= hparams.hop_size / hparams.sample_rate
 
-            boundary_idx.append(np.array(item_boundary_idx))
+            boundaries.append(boundary_interval)
 
-        return boundary_idx
-
-    @staticmethod
-    def eval(prediction: List[ndarray], truth: List[ndarray], len_x: List[int]):
-        acc = np.array([0., 0., 0.])
-        for T, item_pred, item_truth in zip(len_x, prediction, truth):
-            pred_interval = np.zeros((len(item_pred) + 1, 2), dtype=np.int)
-            pred_interval[1:, 0] = item_pred
-            pred_interval[:-1, 1] = item_pred
-            pred_interval[-1, 1] = T
-            pred_interval *= hparams.hop_size / hparams.sample_rate
-
-            truth_interval = np.zeros((len(item_truth) + 1, 2), dtype=np.int)
-            truth_interval[1:, 0] = item_truth
-            truth_interval[:-1, 1] = item_truth
-            truth_interval[-1, 1] = T
-            truth_interval *= hparams.hop_size / hparams.sample_rate
-
-            eval_result = mir_eval.segment.detection(truth_interval, pred_interval, trim=True)
-            acc += np.array(eval_result)
-        return acc
+        return boundaries
 
     # Running model for train, test and validation.
     def run(self, dataloader, mode, epoch):
@@ -189,7 +171,7 @@ class Runner(object):
         print()
         pbar = tqdm(dataloader, desc=f'{mode} {epoch:3d}', postfix='-', dynamic_ncols=True)
 
-        for i_batch, (x, y, boundary_idx, len_x, ids) in enumerate(pbar):
+        for i_batch, (x, y, boundaries, len_x, ids) in enumerate(pbar):
             # data
             y_np = y.int().numpy()
             x = x.to(self.device)  # B, C, F, T
@@ -226,7 +208,10 @@ class Runner(object):
                 # prediction = (out > 0.5).cpu().int()
                 out_np = out.detach().cpu().numpy()
                 prediction = self.predict(out_np, len_x)
-                acc = self.eval(prediction, boundary_idx, len_x)
+                acc = np.array([0., 0., 0.])
+                for item_pred, item_truth in zip(prediction, boundaries):
+                    eval_result = mir_eval.segment.detection(item_truth, item_pred, trim=True)
+                    acc += np.array(eval_result)
             else:
                 out_np = None
                 prediction = out.argmax(1).cpu().int().numpy()
@@ -244,9 +229,10 @@ class Runner(object):
                 id_0 = ids[0]
                 if self.ch_out == 1:
                     out_np_0 = out_np[0, :len_x[0]]
-                    pred_0 = prediction[0]
-                    b_idx_0 = boundary_idx[0]
-                    fig = draw_lineplot(out_np_0, pred_0, b_idx_0, id_0)
+                    t_axis = np.arange(len_x[0]) * hparams.hop_size / hparams.sample_rate
+                    pred_0 = prediction[0][1:, 0]
+                    b_idx_0 = boundaries[0][1:, 0]
+                    fig = draw_lineplot(t_axis, out_np_0, pred_0, b_idx_0, id_0)
                     self.writer.add_figure(f'{mode}/out', fig, epoch)
                     np.save(Path(self.writer.logdir, f'{id_0}_{epoch}.npy'), out_np_0)
                     if epoch == 0:
@@ -318,6 +304,9 @@ def main():
         training=dict(
             loss=['Multiline', ['loss/train', 'loss/valid']],
             accuracy=['Multiline', ['accuracy/train', 'accuracy/valid']],
+            precision=['Multiline', ['precision/train', 'precision/valid']],
+            recall=['Multiline', ['recall/train', 'recall/valid']],
+            F1=['Multiline', ['F1/train', 'F1/valid']],
         ),
     ))
 
@@ -328,11 +317,21 @@ def main():
 
         train_loss, train_acc = runner.run(train_loader, 'train', epoch)
         runner.writer.add_scalar('loss/train', train_loss, epoch)
-        runner.writer.add_scalar('accuracy/train', train_acc, epoch)
+        if type(train_acc) == ndarray:
+            runner.writer.add_scalar('precision/train', train_acc[0], epoch)
+            runner.writer.add_scalar('recall/train', train_acc[1], epoch)
+            runner.writer.add_scalar('F1/train', train_acc[2], epoch)
+        else:
+            runner.writer.add_scalar('accuracy/train', train_acc, epoch)
 
         valid_loss, valid_acc = runner.run(valid_loader, 'valid', epoch)
         runner.writer.add_scalar('loss/valid', valid_loss, epoch)
-        runner.writer.add_scalar('accuracy/valid', valid_acc, epoch)
+        if type(valid_acc) == ndarray:
+            runner.writer.add_scalar('precision/valid', valid_acc[0], epoch)
+            runner.writer.add_scalar('recall/valid', valid_acc[1], epoch)
+            runner.writer.add_scalar('F1/valid', valid_acc[2], epoch)
+        else:
+            runner.writer.add_scalar('accuracy/valid', valid_acc, epoch)
 
         # print(f'[Epoch {epoch:2d}/{hparams.num_epochs:3d}] '
         #       f'[Train Loss: {train_loss:.4f}] '
