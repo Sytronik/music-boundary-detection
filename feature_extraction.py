@@ -266,7 +266,7 @@ def main():
         np.savez(path_feature / 'coarse_maps.npz', **coarse_maps)
         np.savez(path_feature / 'binary_maps.npz', **binary_maps)
         np.savez(path_feature / 'boundary_labels.npz', **boundary_labels)
-        np.savez(path_feature / 'boundary_scores.npz', **boundary_scores)
+        np.savez(path_feature / f'boundary_scores_{len_kernel}.npz', **boundary_scores)
         np.savez(path_feature / 'boundary_indexes.npz', **boundary_indexes)
 
         with (path_feature / 'section_names.txt').open('w') as f:
@@ -305,8 +305,9 @@ if __name__ == '__main__':
     sample_rate = hparams.sample_rate
     sample_period = 1 / sample_rate
 
-    sigma = hparams.len_gaussian_kernel / 4
-    half_len_kernel = hparams.len_gaussian_kernel // 2
+    len_kernel = hparams.len_gaussian_kernel
+    sigma = len_kernel / 4
+    half_len_kernel = len_kernel // 2
     kernel = scsig.gaussian(hparams.len_gaussian_kernel, sigma)
 
     main()

@@ -92,6 +92,9 @@ class HParams(object):
                               eta_threshold=1.5,
                               )
 
+        if self.output_type == 'boundary_scores':
+            self.output_type += f'_{self.len_gaussian_kernel}'
+
     def is_banned(self, f: Path):
         aug_coeffs = f.stem.split('_')[1:]
         for coeff, bans in zip(aug_coeffs, self.s_bans.values()):
