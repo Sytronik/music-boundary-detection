@@ -30,8 +30,7 @@ from utils import draw_segmap, print_to_file, draw_lineplot
 # Wrapper class to run PyTorch model
 class Runner(object):
     def __init__(self, hparams, train_size: int, num_classes: int, class_weight: Tensor):
-        # TODO: model initialization
-        # self.num_classes = num_classes
+        # model, criterion, and prediction
         self.ch_out = num_classes if num_classes > 2 else 1
         self.model = UNet(ch_in=2, ch_out=self.ch_out, **hparams.model)
         if num_classes == 2:
@@ -41,14 +40,22 @@ class Runner(object):
             else:
                 self.criterion = torch.nn.BCELoss()
             self.class_weight = class_weight
+
+            # for prediction
             self.T_6s = round(6 * hparams.sample_rate / hparams.hop_size) - 1
             self.T_12s = round(12 * hparams.sample_rate / hparams.hop_size) - 1
             self.thrs_pred = hparams.thrs_pred
         else:
-            self.sigmoid = False
+            self.sigmoid = None
             self.criterion = torch.nn.CrossEntropyLoss(weight=class_weight)
             self.class_weight = None
 
+            # for prediction
+            self.T_6s = 0
+            self.T_12s = 0
+            self.thrs_pred = 0
+
+        # optimizer and scheduler
         self.optimizer = AdamW(self.model.parameters(),
                                lr=hparams.learning_rate,
                                weight_decay=hparams.weight_decay,
@@ -66,6 +73,7 @@ class Runner(object):
         # self.loss_last_restart = 1000
         # self.acc_last_restart = 0
 
+        # device
         if hparams.device == 'cpu':
             self.device = torch.device('cpu')
             self.out_device = torch.device('cpu')
@@ -105,13 +113,13 @@ class Runner(object):
             torch.cuda.set_device(device[0])
             summary_device = 'cuda'
 
+        # summary
         self.writer = SummaryWriter(logdir=hparams.logdir)
         print_to_file(Path(self.writer.logdir, 'summary.txt'),
                       summary,
-                      (self.model, (2, 128, 128)),
+                      (self.model, (2, 128, 256)),
                       dict(device=summary_device)
                       )
-        # summary(self.model, (2, 128, 256))
 
         # save hyperparameters
         with Path(self.writer.logdir, 'hparams.txt').open('w') as f:
@@ -119,12 +127,12 @@ class Runner(object):
                 value = getattr(hparams, var)
                 print(f'{var}: {value}', file=f)
 
-    def predict(self, out: ndarray, len_x: List[int]):
+    def predict(self, out: ndarray, len_x: List[int]) -> List[ndarray]:
         """ peak-picking prediction
 
         :param out: (B, T) or (T,)
         :param len_x: length B list
-        :return: length B list of boundary indexes
+        :return: length B list of boundary index ndarrays
         """
         if out.ndim == 1:
             out = [out]
@@ -214,10 +222,11 @@ class Runner(object):
 
             if self.ch_out == 1:
                 # prediction = (out > 0.5).cpu().int()
-                prediction = self.predict(out.detach().cpu().numpy(), len_x)
+                out_np = out.detach().cpu().numpy()
+                prediction = self.predict(out_np, len_x)
                 acc = self.eval(prediction, boundary_idx, len_x)
-
             else:
+                out_np = None
                 prediction = out.argmax(1).cpu().int().numpy()
                 acc = 0.
                 for ii, T in enumerate(len_x):
@@ -230,21 +239,23 @@ class Runner(object):
                 self.optimizer.step()
                 self.scheduler.batch_step()
             elif i_batch == 0:
-                pred_0_np = prediction[0, :len_x[0]]
-                y_0_np = y_np[0, :len_x[0]]
+                id_0 = ids[0]
                 if self.ch_out == 1:
-                    out_0_np = out[0, :len_x[0]].detach().cpu().numpy()
-                    fig = draw_lineplot(out_0_np, pred_0_np, y_0_np, ids[0])
+                    out_np_0 = out_np[0, :len_x[0]]
+                    pred_0 = prediction[0]
+                    b_idx_0 = boundary_idx[0]
+                    fig = draw_lineplot(out_np_0, pred_0, b_idx_0, id_0)
                     self.writer.add_figure(f'{mode}/out', fig, epoch)
-                    np.save(Path(self.writer.logdir, f'{ids[0]}_{epoch}.npy'), out_0_np)
+                    np.save(Path(self.writer.logdir, f'{id_0}_{epoch}.npy'), out_np_0)
                     if epoch == 0:
-                        np.save(Path(self.writer.logdir, f'{ids[0]}_truth.npy'), y_0_np)
+                        np.save(Path(self.writer.logdir, f'{id_0}_truth.npy'), b_idx_0)
                 else:
-                    # y_cpu 랑 prediction을 matplotlib 으로 visualize하는 함수를 호출
-                    fig = draw_segmap(ids[0], pred_0_np)
+                    pred_0 = prediction[0, :len_x[0]]
+                    fig = draw_segmap(id_0, pred_0)
                     self.writer.add_figure(f'{mode}/prediction', fig, epoch)
                     if epoch == 0:
-                        fig = draw_segmap(ids[0], y_0_np, dataloader.dataset.sect_names)
+                        y_np_0 = y_np[0, :len_x[0]]
+                        fig = draw_segmap(id_0, y_np_0, dataloader.dataset.sect_names)
                         self.writer.add_figure(f'{mode}/truth', fig, epoch)
                 # all_pred.append(prediction.numpy())
 
@@ -313,19 +324,13 @@ def main():
     for epoch in range(hparams.num_epochs):
         # runner.writer.add_scalar('lr', runner.optimizer.param_groups[0]['lr'], epoch)
 
-        train_loss, train_acc, train_precision, train_recall, train_fscore = runner.run(train_loader, 'train', epoch)
+        train_loss, train_acc = runner.run(train_loader, 'train', epoch)
         runner.writer.add_scalar('loss/train', train_loss, epoch)
         runner.writer.add_scalar('accuracy/train', train_acc, epoch)
-        runner.writer.add_scalar('precision/train', train_acc, epoch)
-        runner.writer.add_scalar('recall/train', train_acc, epoch)
-        runner.writer.add_scalar('fscore/train', train_acc, epoch)
 
-        valid_loss, valid_acc, valid_precision, valid_recall, valid_fscore = runner.run(valid_loader, 'valid', epoch)
+        valid_loss, valid_acc = runner.run(valid_loader, 'valid', epoch)
         runner.writer.add_scalar('loss/valid', valid_loss, epoch)
         runner.writer.add_scalar('accuracy/valid', valid_acc, epoch)
-        runner.writer.add_scalar('precision/valid', valid_acc, epoch)
-        runner.writer.add_scalar('recall/valid', valid_acc, epoch)
-        runner.writer.add_scalar('fscore/valid', valid_acc, epoch)
 
         # print(f'[Epoch {epoch:2d}/{hparams.num_epochs:3d}] '
         #       f'[Train Loss: {train_loss:.4f}] '

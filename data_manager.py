@@ -164,7 +164,7 @@ class SALAMIDataset(Dataset):
                 self.num_classes = max_cls_idx + 1
             elif (hparams.output_type == 'binary_maps'
                   or hparams.output_type == 'boundary_labels'
-                  or hparams.output_type == 'boundary_scores'):
+                  or hparams.output_type.startswith('boundary_scores')):
                 self.num_classes = 2
             else:
                 raise Exception
@@ -173,7 +173,7 @@ class SALAMIDataset(Dataset):
             self.class_weight = np.zeros(self.num_classes, dtype=np.float32)
             for y in self.all_y.values():
                 for label in y:
-                    if hparams.output_type == 'boundary_scores':
+                    if hparams.output_type.startswith('boundary_scores'):
                         self.class_weight[int(label > 0)] += 1
                     else:
                         self.class_weight[label] += 1
