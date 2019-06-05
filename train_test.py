@@ -167,13 +167,15 @@ class Runner(object):
             pred_interval[1:, 0] = item_pred
             pred_interval[:-1, 1] = item_pred
             pred_interval[-1, 1] = T
+            pred_interval *= hparams.hop_size / hparams.sample_rate
 
             truth_interval = np.zeros((len(item_truth) + 1, 2), dtype=np.int)
             truth_interval[1:, 0] = item_truth
             truth_interval[:-1, 1] = item_truth
             truth_interval[-1, 1] = T
+            truth_interval *= hparams.hop_size / hparams.sample_rate
 
-            eval_result = mir_eval.segment.detection(truth_interval, pred_interval)
+            eval_result = mir_eval.segment.detection(truth_interval, pred_interval, trim=True)
             acc += np.array(eval_result)
         return acc
 
@@ -275,7 +277,7 @@ class Runner(object):
         #     fig = plot_confusion_matrix(dataloader.dataset.y, all_pred, hparams.genres)
         #     self.writer.add_figure(f'confmat/{mode}', fig, epoch)
 
-        return avg_loss, avg_acc, avg_precision, avg_recall, avg_fscore
+        return avg_loss, avg_acc
 
     # Early stopping function for given validation loss
     def early_stop(self, epoch, train_acc, valid_acc, valid_loss):
