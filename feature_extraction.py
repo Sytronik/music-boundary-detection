@@ -1,9 +1,15 @@
 """
 feature_extraction.py
 
-A file related with extracting feature.
-For the baseline code it loads audio files and extract mel-spectrogram using Librosa.
-Then it stores in the './feature' folder.
+Usage:
+python feature_extraction.py KIND_DATA [--mode=MODE] [--num-workers=N]
+
+- KIND_DATA can be 'train' or 'test'.
+- MODE can be 'io', 'in', or 'out' (means what feature will be processed).
+    Default is 'io'
+- N can be an integer from 1 to cpu_count.
+    Default is cpu_count - 1
+
 """
 import csv
 import multiprocessing as mp
@@ -153,9 +159,14 @@ def extract_feature(song_id: int, path_audio: Path, path_annot: Path) \
         elif (t_boundaries[i_boundary] - t_frames[i_frame]
               <= t_frames[i_frame + 1] - t_boundaries[i_boundary]):
             # if the current frame is closer than the next frame
-            boundary_label.append(1)
-            sect_map.append(sections[i_boundary])
-            binary_map.append(int(not binary_map[-1]))
+            if i_frame == 0:  # prevent marking the first frame is the boundary
+                boundary_label.append(0)
+                sect_map.append(sect_map[-1])
+                binary_map.append(binary_map[-1])
+            else:
+                boundary_label.append(1)
+                sect_map.append(sections[i_boundary])
+                binary_map.append(int(not binary_map[-1]))
             i_boundary += 1
         elif (t_boundaries[i_boundary] - t_frames[i_frame]
               < t_frames[i_frame - 1] - t_boundaries[i_boundary]):
@@ -166,6 +177,11 @@ def extract_feature(song_id: int, path_audio: Path, path_annot: Path) \
             i_boundary += 1
         else:
             raise Exception(song_id)
+
+    if boundary_label[-1] == 1:
+        boundary_label[-1] = 0
+        sect_map[-1] = sect_map[-2]
+        binary_map[-1] = binary_map[-2]
 
     sect_map = sect_map[1:]
     boundary_label = np.array(boundary_label)
