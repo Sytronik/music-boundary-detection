@@ -9,22 +9,21 @@ import shutil
 from pathlib import Path
 from typing import List
 
+import mir_eval
 import numpy as np
-from numpy import ndarray
 import torch
 import torch.nn as nn
-import mir_eval
-# from torch.utils.tensorboard.writer import SummaryWriter
+from numpy import ndarray
 from tensorboardX import SummaryWriter
-from torchsummary import summary
 from torch import Tensor
+from torchsummary import summary
 from tqdm import tqdm
 
 import data_manager
 from adamwr import AdamW, CosineLRWithRestarts
 from hparams import hparams
 from models import UNet
-from utils import draw_segmap, print_to_file, draw_lineplot
+from utils import draw_lineplot, print_to_file
 
 
 # Wrapper class to run PyTorch model

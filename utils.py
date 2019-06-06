@@ -1,13 +1,13 @@
 import contextlib
 import os
 from pathlib import Path
-from typing import Callable, Union, List
+from typing import Callable, List, Union
 
+import matplotlib.pyplot as plt
 import numpy as np
 import torch
 from numpy import ndarray
 from torch import Tensor
-import matplotlib.pyplot as plt
 
 
 def draw_segmap(song_id: int, segmap: ndarray, sect_names: List[str] = None):

@@ -11,7 +11,6 @@ from typing import Any, Callable, Dict, List, Sequence, Tuple, Union
 import numpy as np
 import torch
 from numpy import ndarray
-from torch import Tensor
 from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm

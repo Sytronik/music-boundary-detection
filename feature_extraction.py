@@ -16,14 +16,14 @@ import multiprocessing as mp
 import os
 from argparse import ArgumentParser
 from itertools import product
-from typing import Tuple, Optional, List
 from pathlib import Path
+from typing import List, Optional, Tuple
 
 import librosa
 import numpy as np
+import scipy.signal as scsig
 from numpy import ndarray
 from tqdm import tqdm
-import scipy.signal as scsig
 
 from hparams import hparams
 
