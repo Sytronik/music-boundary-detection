@@ -60,13 +60,13 @@ def draw_lineplot(t_axis: ndarray, score: ndarray, prediction: ndarray, truth: n
     plt.title(str(song_id))
     ax = plt.gca()
     ax.vlines(x=prediction, ymin=0.7, ymax=1, colors='r', label='prediction', zorder=2)
-    ax.vlines(x=truth, ymin=0, ymax=0.3, colors='g', label='truth', zorder=2)
+    ax.vlines(x=truth, ymin=0, ymax=0.3, colors='y', label='truth', zorder=2)
     ax.legend(loc='upper right')
     # ax.set_xticks(truth)
     ax.set_yticks([0, 0.5, 1])
     ax.grid(True, axis='y')
     ax.set_xlabel('time frame index')
-    # ax.set_ylabel('boundary score')
+    ax.set_ylabel('boundary score')
     fig.tight_layout()
     return fig
 
