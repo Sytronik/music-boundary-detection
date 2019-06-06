@@ -45,6 +45,7 @@ class Runner(object):
             self.T_6s = round(6 * hparams.sample_rate / hparams.hop_size) - 1
             self.T_12s = round(12 * hparams.sample_rate / hparams.hop_size) - 1
             self.thrs_pred = hparams.thrs_pred
+            self.metrics = ('precision', 'recall', 'F1', 'mean', 'std')
         else:
             self.sigmoid = None
             self.criterion = torch.nn.CrossEntropyLoss(weight=class_weight)
@@ -176,7 +177,8 @@ class Runner(object):
                 if item[idx] - self.thrs_pred * np.mean(item[i_first:i_last]) > 0:
                     boundary_idx.append(idx)
 
-            boundary_interval = np.array([[0] + boundary_idx, boundary_idx + [T]], dtype=np.float64).T
+            boundary_interval = np.array([[0] + boundary_idx, boundary_idx + [T]],
+                                         dtype=np.float64).T
             boundary_interval *= self.frame2time
 
             boundaries.append(boundary_interval)
@@ -332,18 +334,14 @@ def main():
                     len(train_loader.dataset),
                     train_loader.dataset.num_classes,
                     train_loader.dataset.class_weight)
-    runner.writer.add_custom_scalars(dict(
-        training=dict(
-            loss=['Multiline', ['loss/train', 'loss/valid']],
-            accuracy=['Multiline', ['accuracy/train', 'accuracy/valid']],
-            precision=['Multiline', ['precision/train', 'precision/valid']],
-            recall=['Multiline', ['recall/train', 'recall/valid']],
-            F1=['Multiline', ['F1/train', 'F1/valid']],
-            mean=['Multiline', ['mean/train', 'mean/valid']],
-            std=['Multiline', ['std/train', 'std/valid']],
-        ),
-    ))
-    metrics = ('precision', 'recall', 'F1', 'mean', 'std')
+
+    dict_custom_scalars = dict(
+        loss=['Multiline', ['loss/train', 'loss/valid']],
+        accuracy=['Multiline', ['accuracy/train', 'accuracy/valid']],
+    )
+    for name in runner.metrics:
+        dict_custom_scalars[name] = ['Multiline', [f'{name}/train', f'{name}/valid']]
+    runner.writer.add_custom_scalars(dict(training=dict_custom_scalars))
 
     epoch = 0
     print(f'Training on {runner.str_device}')
@@ -353,7 +351,7 @@ def main():
         train_loss, train_acc = runner.run(train_loader, 'train', epoch)
         runner.writer.add_scalar('loss/train', train_loss, epoch)
         if type(train_acc) == ndarray:
-            for idx, name in enumerate(metrics):
+            for idx, name in enumerate(runner.metrics):
                 runner.writer.add_scalar(f'{name}/train', train_acc[idx], epoch)
         else:
             runner.writer.add_scalar('accuracy/train', train_acc, epoch)
@@ -361,7 +359,7 @@ def main():
         valid_loss, valid_acc = runner.run(valid_loader, 'valid', epoch)
         runner.writer.add_scalar('loss/valid', valid_loss, epoch)
         if type(valid_acc) == ndarray:
-            for idx, name in enumerate(metrics):
+            for idx, name in enumerate(runner.metrics):
                 runner.writer.add_scalar(f'{name}/valid', valid_acc[idx], epoch)
         else:
             runner.writer.add_scalar('accuracy/valid', valid_acc, epoch)
