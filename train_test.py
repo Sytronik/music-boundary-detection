@@ -31,32 +31,18 @@ from utils import draw_segmap, print_to_file, draw_lineplot
 class Runner(object):
     def __init__(self, hparams, train_size: int, num_classes: int, class_weight: Tensor):
         # model, criterion, and prediction
-        self.ch_out = num_classes if num_classes > 2 else 1
-        self.model = UNet(ch_in=2, ch_out=self.ch_out, **hparams.model)
-        if num_classes == 2:
-            self.sigmoid = torch.nn.Sigmoid()
-            if class_weight is not None:
-                self.criterion = torch.nn.BCELoss(reduction='none')
-            else:
-                self.criterion = torch.nn.BCELoss()
-            self.class_weight = class_weight
+        ch_out = num_classes if num_classes > 2 else 1
+        self.model = UNet(ch_in=2, ch_out=ch_out, **hparams.model)
+        self.sigmoid = torch.nn.Sigmoid()
+        self.criterion = torch.nn.BCELoss(reduction='none')
+        self.class_weight = class_weight
 
-            # for prediction
-            self.T_6s = round(6 * hparams.sample_rate / hparams.hop_size) - 1
-            self.T_12s = round(12 * hparams.sample_rate / hparams.hop_size) - 1
-            self.thrs_pred = hparams.thrs_pred
-            self.metrics = ('precision', 'recall', 'F1', 'mean', 'std')
-        else:
-            self.sigmoid = None
-            self.criterion = torch.nn.CrossEntropyLoss(weight=class_weight)
-            self.class_weight = None
-
-            # for prediction
-            self.T_6s = 0
-            self.T_12s = 0
-            self.thrs_pred = 0
-
+        # for prediction
         self.frame2time = hparams.hop_size / hparams.sample_rate
+        self.T_6s = round(6 / self.frame2time) - 1
+        self.T_12s = round(12 / self.frame2time) - 1
+        self.thrs_pred = hparams.thrs_pred
+        self.metrics = ('precision', 'recall', 'F1', 'mean', 'std')
 
         # optimizer and scheduler
         self.optimizer = AdamW(self.model.parameters(),
@@ -137,15 +123,11 @@ class Runner(object):
 
     def calc_loss(self, y: Tensor, out: Tensor, len_x: List[int]):
         loss = torch.zeros(1, device=self.out_device)
-        if self.class_weight is not None:
-            weight = (y > 0).float() * self.class_weight[1].item()
-            weight += (y == 0).float() * self.class_weight[0].item()
-            for ii, T in enumerate(len_x):
-                loss_no_red = self.criterion(out[ii:ii + 1, ..., :T], y[ii:ii + 1, :T])
-                loss += (loss_no_red * weight[ii:ii + 1, :T]).sum() / T
-        else:
-            for ii, T in enumerate(len_x):
-                loss += self.criterion(out[ii:ii + 1, ..., :T], y[ii:ii + 1, :T])
+        weight = (y > 0).float() * self.class_weight[1].item()
+        weight += (y == 0).float() * self.class_weight[0].item()
+        for ii, T in enumerate(len_x):
+            loss_no_red = self.criterion(out[ii:ii + 1, ..., :T], y[ii:ii + 1, :T])
+            loss += (loss_no_red * weight[ii:ii + 1, :T]).sum() / T
 
         return loss
 
@@ -177,69 +159,54 @@ class Runner(object):
                 if item[idx] - self.thrs_pred * np.mean(item[i_first:i_last]) > 0:
                     boundary_idx.append(idx)
 
-            boundary_interval = np.array([[0] + boundary_idx, boundary_idx + [T]],
-                                         dtype=np.float64).T
+            boundary_interval = np.array([[0] + boundary_idx,
+                                          boundary_idx + [T]], dtype=np.float64).T
             boundary_interval *= self.frame2time
 
             boundaries.append(boundary_interval)
 
         return boundaries
 
-    def evaluate(self, y_np: ndarray, boundaries: List[ndarray],
-                 out_np: ndarray, prediction: List[ndarray], len_x: List[int]):
-        if self.ch_out == 1:
-            acc = np.array([0., 0., 0., 0., 0.])
-            for item_truth, item_pred, item_out in zip(boundaries, prediction, out_np):
-                eval_result = mir_eval.segment.detection(item_truth, item_pred, trim=True)
-                acc += np.array([*eval_result, item_out.mean(), item_out.std()])
-        else:
-            acc = 0.
-            for ii, T in enumerate(len_x):
-                corrected = (prediction[ii, :T] == y_np[ii, :T]).sum().item()
-                acc += corrected / T / self.ch_out
+    @staticmethod
+    def evaluate(boundaries: List[ndarray], out_np: ndarray, prediction: List[ndarray]):
+        result = np.zeros(5)
+        for item_truth, item_pred, item_out in zip(boundaries, prediction, out_np):
+            mir_result = mir_eval.segment.detection(item_truth, item_pred, trim=True)
+            result += np.array([*mir_result, item_out.mean(), item_out.std()])
 
-        return acc
+        return result
 
     # Running model for train, test and validation.
     def run(self, dataloader, mode: str, epoch: int):
         self.model.train() if mode == 'train' else self.model.eval()
 
         avg_loss = 0.
-        avg_acc = 0.
+        avg_eval = 0.
         # all_pred = []  # all predictions (for confusion matrix)
         print()
         pbar = tqdm(dataloader, desc=f'{mode} {epoch:3d}', postfix='-', dynamic_ncols=True)
 
-        for i_batch, (x, y, boundaries, len_x, ids) in enumerate(pbar):
+        for i_batch, (x, y, boundaries, Ts, ids) in enumerate(pbar):
             # data
-            y_np = y.int().numpy()
+            # y_np = y.int().numpy()
             x = x.to(self.device)  # B, C, F, T
             x = dataloader.dataset.normalization.normalize_(x)
             y = y.to(self.out_device)  # B, T
-            # len_x = len_x.to(self.device)
 
             # forward
             out = self.model(x)  # B, C, 1, T
-            if self.ch_out == 1:
-                out = self.sigmoid(out)[..., 0, 0, :]  # B, T
-            else:
-                out = out.squeeze_(-2)  # B, C, T
+            out = self.sigmoid(out)[..., 0, 0, :]  # B, T
 
             # loss
             if mode != 'test':
-                loss = self.calc_loss(y, out, len_x)
+                loss = self.calc_loss(y, out, Ts)
             else:
                 loss = 0
 
-            if self.ch_out == 1:
-                out_np = out.detach().cpu().numpy()
-                # prediction = (out > 0.5).cpu().int()
-                prediction = self.predict(out_np, len_x)
-            else:
-                out_np = None
-                prediction = out.argmax(1).cpu().int().numpy()
+            out_np = out.detach().cpu().numpy()
+            prediction = self.predict(out_np, Ts)
 
-            acc = self.evaluate(y_np, boundaries, out_np, prediction, len_x)
+            eval_result = self.evaluate(boundaries, out_np, prediction)
 
             if mode == 'train':
                 # backward
@@ -253,26 +220,17 @@ class Runner(object):
                 loss = loss.item()
                 if i_batch == 0:
                     id_0 = ids[0]
-                    T_0 = len_x[0]
-                    if self.ch_out == 1:
-                        out_np_0 = out_np[0, :T_0]
-                        t_axis = np.arange(T_0) * self.frame2time
-                        pred_0 = prediction[0][1:, 0]
-                        b_idx_0 = boundaries[0][1:, 0]
-                        fig = draw_lineplot(t_axis, out_np_0, pred_0, b_idx_0, id_0)
-                        self.writer.add_figure(f'{mode}/out', fig, epoch)
-                        np.save(Path(self.writer.logdir, f'{id_0}_{epoch}.npy'), out_np_0)
-                        np.save(Path(self.writer.logdir, f'{id_0}_{epoch}_pred.npy'), pred_0)
-                        if epoch == 0:
-                            np.save(Path(self.writer.logdir, f'{id_0}_truth.npy'), b_idx_0)
-                    else:
-                        pred_0 = prediction[0, :T_0]
-                        fig = draw_segmap(id_0, pred_0)
-                        self.writer.add_figure(f'{mode}/prediction', fig, epoch)
-                        if epoch == 0:
-                            y_np_0 = y_np[0, :T_0]
-                            fig = draw_segmap(id_0, y_np_0, dataloader.dataset.sect_names)
-                            self.writer.add_figure(f'{mode}/truth', fig, epoch)
+                    T_0 = Ts[0]
+                    out_np_0 = out_np[0, :T_0]
+                    t_axis = np.arange(T_0) * self.frame2time
+                    pred_0 = prediction[0][1:, 0]
+                    b_idx_0 = boundaries[0][1:, 0]
+                    fig = draw_lineplot(t_axis, out_np_0, pred_0, b_idx_0, id_0)
+                    self.writer.add_figure(f'{mode}/out', fig, epoch)
+                    np.save(Path(self.writer.logdir, f'{id_0}_{epoch}.npy'), out_np_0)
+                    np.save(Path(self.writer.logdir, f'{id_0}_{epoch}_pred.npy'), pred_0)
+                    if epoch == 0:
+                        np.save(Path(self.writer.logdir, f'{id_0}_truth.npy'), b_idx_0)
             else:
                 for id_, item_truth, item_pred, item_out \
                         in zip(ids, boundaries, prediction, out_np):
@@ -280,22 +238,16 @@ class Runner(object):
                     np.save(Path(self.writer.logdir, 'test', f'{id_}.npy'), item_out)
                     np.save(Path(self.writer.logdir, 'test', f'{id_}_pred.npy'), item_pred)
 
-            s_acc = np.array2string(acc, precision=3) if type(acc) == ndarray else f'{acc:.3f}'
+            s_acc = np.array2string(eval_result, precision=3)
             pbar.set_postfix_str(f'{loss:.3f}, {s_acc}')
 
             avg_loss += loss
-            avg_acc += acc
+            avg_eval += eval_result
 
         avg_loss = avg_loss / len(dataloader.dataset)
-        avg_acc = avg_acc / len(dataloader.dataset)
+        avg_eval = avg_eval / len(dataloader.dataset)
 
-        # draw confusion matrix
-        # if mode != 'train':
-        #     all_pred = np.concatenate(all_pred)
-        #     fig = plot_confusion_matrix(dataloader.dataset.y, all_pred, hparams.genres)
-        #     self.writer.add_figure(f'confmat/{mode}', fig, epoch)
-
-        return avg_loss, avg_acc
+        return avg_loss, avg_eval
 
     # Early stopping function for given validation loss
     def early_stop(self, epoch, train_acc, valid_acc, valid_loss):
@@ -348,29 +300,17 @@ def main():
     for epoch in range(hparams.num_epochs):
         # runner.writer.add_scalar('lr', runner.optimizer.param_groups[0]['lr'], epoch)
 
-        train_loss, train_acc = runner.run(train_loader, 'train', epoch)
+        train_loss, train_eval = runner.run(train_loader, 'train', epoch)
         runner.writer.add_scalar('loss/train', train_loss, epoch)
-        if type(train_acc) == ndarray:
-            for idx, name in enumerate(runner.metrics):
-                runner.writer.add_scalar(f'{name}/train', train_acc[idx], epoch)
-        else:
-            runner.writer.add_scalar('accuracy/train', train_acc, epoch)
+        for idx, name in enumerate(runner.metrics):
+            runner.writer.add_scalar(f'{name}/train', train_eval[idx], epoch)
 
-        valid_loss, valid_acc = runner.run(valid_loader, 'valid', epoch)
+        valid_loss, valid_eval = runner.run(valid_loader, 'valid', epoch)
         runner.writer.add_scalar('loss/valid', valid_loss, epoch)
-        if type(valid_acc) == ndarray:
-            for idx, name in enumerate(runner.metrics):
-                runner.writer.add_scalar(f'{name}/valid', valid_acc[idx], epoch)
-        else:
-            runner.writer.add_scalar('accuracy/valid', valid_acc, epoch)
+        for idx, name in enumerate(runner.metrics):
+            runner.writer.add_scalar(f'{name}/valid', valid_eval[idx], epoch)
 
-        # print(f'[Epoch {epoch:2d}/{hparams.num_epochs:3d}] '
-        #       f'[Train Loss: {train_loss:.4f}] '
-        #       f'[Train Acc: {train_acc:.4f}] '
-        #       f'[Valid Loss: {valid_loss:.4f}] '
-        #       f'[Valid Acc: {valid_acc:.4f}]')
-
-        epoch_or_zero = runner.early_stop(epoch, train_acc, valid_acc, valid_loss)
+        epoch_or_zero = runner.early_stop(epoch, train_eval, valid_eval, valid_loss)
         if epoch_or_zero != 0:
             epoch = epoch_or_zero
             print(f'Early stopped at {epoch}')

@@ -29,10 +29,6 @@ class HParams(object):
     hop_size: int = 1024
     num_mels: int = 128
     refresh_normconst: bool = False
-    # output_type: str = 'section_maps'
-    # output_type: str = 'coarse_maps'
-    # output_type: str = 'binary_maps'
-    # output_type: str = 'boundary_labels'
     output_type: str = 'boundary_scores'
     len_gaussian_kernel: int = 21
 

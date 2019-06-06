@@ -142,6 +142,8 @@ class SALAMIDataset(Dataset):
         # self.all_files = list(np.random.permutation(self.all_files).tolist())
 
         self.all_ys = dict(**np.load(self._PATH / f'{hparams.output_type}.npz'))
+        self.all_ys = {k: torch.tensor(v, dtype=torch.float32) for k, v in self.all_ys.items()}
+
         self.all_boundaries = dict(**np.load(self._PATH / 'boundary_indexes.npz'))
         for s_song_id, boundary_idx in self.all_boundaries.items():
             length = len(boundary_idx)
@@ -152,7 +154,6 @@ class SALAMIDataset(Dataset):
             boundary_interval *= hparams.hop_size / hparams.sample_rate
             self.all_boundaries[s_song_id] = boundary_interval
 
-        self.sect_names = []
         if kind_data == 'train':
             f_normconst = self._PATH / 'normconst.npz'
             if f_normconst.exists() and not hparams.refresh_normconst:
@@ -161,50 +162,21 @@ class SALAMIDataset(Dataset):
                 self.normalization = Normalization.calc_const(self.all_files)
                 self.normalization.save(f_normconst)
 
-            if hparams.output_type == 'section_maps':
-                # section names
-                with (self._PATH / 'section_names.txt').open('r') as f:
-                    for line in f.readlines():
-                        line = line.split(': ')
-                        self.sect_names.append(line[1])
-                self.num_classes = len(self.sect_names)
-            elif hparams.output_type == 'coarse_maps':
-                max_cls_idx = 0
-                for coarse_map in self.all_ys.values():
-                    max_coarse = coarse_map.max()
-                    if max_cls_idx < max_coarse:
-                        max_cls_idx = max_coarse
-                self.num_classes = max_cls_idx + 1
-            elif (hparams.output_type == 'binary_maps'
-                  or hparams.output_type == 'boundary_labels'
-                  or hparams.output_type.startswith('boundary_scores')):
-                self.num_classes = 2
-            else:
-                raise Exception
-            self.dtype_y = torch.int64 if self.num_classes > 2 else torch.float32
+            self.num_classes = 2
 
             # Calculate weight per class using no. of samples per class
             self.class_weight = np.zeros(self.num_classes, dtype=np.float32)
             for y in self.all_ys.values():
                 for label in y:
-                    if hparams.output_type.startswith('boundary_scores'):
-                        self.class_weight[int(label > 0)] += 1
-                    else:
-                        self.class_weight[label] += 1
+                    self.class_weight[int(label > 0)] += 1
             self.class_weight = self.class_weight.max() / self.class_weight
             self.class_weight = torch.from_numpy(self.class_weight)
         else:
             try:
                 self.normalization = kwargs['normalization']
                 self.num_classes = kwargs['num_classes']
-                self.sect_names = kwargs['sect_names']
-                self.dtype_y = kwargs['dtype_y']
-                # self.weight = kwargs['weight']
             except KeyError:
                 raise Exception(kwargs)
-
-        # convert ys to tensors.
-        self.all_ys = {k: torch.tensor(v, dtype=self.dtype_y) for k, v in self.all_ys.items()}
 
     def __getitem__(self, idx: int) -> Tuple:
         """
@@ -298,8 +270,6 @@ def get_dataloader(hparams):
     test_set = SALAMIDataset('test', hparams,
                              normalization=salami.normalization,
                              num_classes=salami.num_classes,
-                             sect_names=salami.sect_names,
-                             dtype_y=salami.dtype_y,
                              )
 
     common_kwargs = dict(batch_size=hparams.batch_size,
