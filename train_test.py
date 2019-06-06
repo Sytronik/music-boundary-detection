@@ -245,33 +245,43 @@ class Runner(object):
                 loss.backward()
                 self.optimizer.step()
                 self.scheduler.batch_step()
-            elif i_batch == 0:
-                id_0 = ids[0]
-                if self.ch_out == 1:
-                    out_np_0 = out_np[0, :len_x[0]]
-                    t_axis = np.arange(len_x[0]) * hparams.hop_size / hparams.sample_rate
-                    pred_0 = prediction[0][1:, 0]
-                    b_idx_0 = boundaries[0][1:, 0]
-                    fig = draw_lineplot(t_axis, out_np_0, pred_0, b_idx_0, id_0)
-                    self.writer.add_figure(f'{mode}/out', fig, epoch)
-                    np.save(Path(self.writer.logdir, f'{id_0}_{epoch}.npy'), out_np_0)
-                    if epoch == 0:
-                        np.save(Path(self.writer.logdir, f'{id_0}_truth.npy'), b_idx_0)
-                else:
-                    pred_0 = prediction[0, :len_x[0]]
-                    fig = draw_segmap(id_0, pred_0)
-                    self.writer.add_figure(f'{mode}/prediction', fig, epoch)
-                    if epoch == 0:
-                        y_np_0 = y_np[0, :len_x[0]]
-                        fig = draw_segmap(id_0, y_np_0, dataloader.dataset.sect_names)
-                        self.writer.add_figure(f'{mode}/truth', fig, epoch)
-                # all_pred.append(prediction.numpy())
-
-            if mode != 'test':
                 loss = loss.item()
+            elif mode == 'valid':
+                # record
+                loss = loss.item()
+                if i_batch == 0:
+                    id_0 = ids[0]
+                    T_0 = len_x[0]
+                    if self.ch_out == 1:
+                        out_np_0 = out_np[0, :T_0]
+                        t_axis = np.arange(T_0) * self.frame2time
+                        pred_0 = prediction[0][1:, 0]
+                        b_idx_0 = boundaries[0][1:, 0]
+                        fig = draw_lineplot(t_axis, out_np_0, pred_0, b_idx_0, id_0)
+                        self.writer.add_figure(f'{mode}/out', fig, epoch)
+                        np.save(Path(self.writer.logdir, f'{id_0}_{epoch}.npy'), out_np_0)
+                        np.save(Path(self.writer.logdir, f'{id_0}_{epoch}_pred.npy'), pred_0)
+                        if epoch == 0:
+                            np.save(Path(self.writer.logdir, f'{id_0}_truth.npy'), b_idx_0)
+                    else:
+                        pred_0 = prediction[0, :T_0]
+                        fig = draw_segmap(id_0, pred_0)
+                        self.writer.add_figure(f'{mode}/prediction', fig, epoch)
+                        if epoch == 0:
+                            y_np_0 = y_np[0, :T_0]
+                            fig = draw_segmap(id_0, y_np_0, dataloader.dataset.sect_names)
+                            self.writer.add_figure(f'{mode}/truth', fig, epoch)
+            else:
+                for id_, item_truth, item_pred, item_out \
+                        in zip(ids, boundaries, prediction, out_np):
+                    np.save(Path(self.writer.logdir, 'test', f'{id_}_truth.npy'), item_truth)
+                    np.save(Path(self.writer.logdir, 'test', f'{id_}.npy'), item_out)
+                    np.save(Path(self.writer.logdir, 'test', f'{id_}_pred.npy'), item_pred)
+
             s_acc = np.array2string(acc, precision=3) if type(acc) == ndarray else f'{acc:.3f}'
             pbar.set_postfix_str(f'{loss:.3f}, {s_acc}')
-            avg_loss += loss if mode != 'test' else 0
+
+            avg_loss += loss
             avg_acc += acc
 
         avg_loss = avg_loss / len(dataloader.dataset)
@@ -368,6 +378,7 @@ def main():
             print(f'Early stopped at {epoch}')
             break
 
+    os.makedirs(Path(hparams.logdir, 'test'))
     # _, test_acc = runner.run(test_loader, 'test', epoch)
     print('Training Finished')
 
