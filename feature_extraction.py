@@ -129,7 +129,7 @@ def extract_feature(song_id: int, path_audio: Path, path_annot: Path) \
                 # elif sections[-1] == s ^ coarse[-1] == c:
                 #     raise Exception(song_id)
             t_boundaries.append(t)
-            sections.append(s)
+            sections.append(s.lower())
 
     # s_sect = str(sections).replace('\'', '').replace(',', '')
     # print(f' {s_sect}')
@@ -137,7 +137,7 @@ def extract_feature(song_id: int, path_audio: Path, path_annot: Path) \
     # boundary label / section segmentation map / coarse structure map
     boundary_label = []
     binary_map = [0]
-    sect_map = ['Silence']
+    sect_map = ['silence']
     i_boundary = 0
     for i_frame in range(len(t_frames) - 1):
         if i_boundary == len(t_boundaries):
@@ -202,7 +202,7 @@ def extract_feature(song_id: int, path_audio: Path, path_annot: Path) \
 
 def main():
     songs = []
-    sect_names = {'Silence'}
+    sect_names = {'silence'}
     sect_maps = dict()
     coarse_maps = dict()
     binary_maps = dict()
@@ -263,6 +263,16 @@ def main():
     if b_extract_output:
         print()
         print('save ground truth...')
+
+        if kind_data == 'test':
+            sect_names_train = []
+            with (hparams.path_feature['train'] / 'section_names.txt').open('r') as f:
+                for line in f.readlines():
+                    sect_names_train.append(line.replace('\n', '').split(': ')[1].lower())
+
+            if any([name not in sect_names_train for name in sect_names]):
+                raise Exception
+            sect_names = sect_names_train
 
         dict_sect_idx = {name: idx for idx, name in enumerate(sect_names)}
         for s_song_id in sect_maps.keys():
