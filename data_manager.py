@@ -145,7 +145,7 @@ class SALAMIDataset(Dataset):
         self.all_boundaries = dict(**np.load(self._PATH / 'boundary_indexes.npz'))
         for s_song_id, boundary_idx in self.all_boundaries.items():
             length = len(boundary_idx)
-            boundary_interval = np.zeros((length, 2))
+            boundary_interval = np.zeros((length+1, 2))
             boundary_interval[1:, 0] = boundary_idx
             boundary_interval[:-1, 1] = boundary_idx
             boundary_interval[-1, 1] = len(self.all_ys[s_song_id])

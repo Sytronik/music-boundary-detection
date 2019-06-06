@@ -141,7 +141,7 @@ class Runner(object):
         for item, T in zip(out, len_x):
             # candid_val = []
             candid_idx = []
-            for idx in range(T):
+            for idx in range(1, T - 1):
                 i_first = max(idx - self.T_6s, 0)
                 i_last = min(idx + self.T_6s + 1, T)
                 if item[idx] >= np.amax(item[i_first:i_last]):
@@ -154,7 +154,8 @@ class Runner(object):
                 i_last = min(idx + self.T_6s + 1, T)
                 if item[idx] - self.thrs_pred * np.mean(item[i_first:i_last]) > 0:
                     boundary_idx.append(idx)
-            boundary_interval = np.array([[0]+boundary_idx, boundary_idx+[T]]).T
+
+            boundary_interval = np.array([[0]+boundary_idx, boundary_idx+[T]], dtype=np.float64).T
             boundary_interval *= hparams.hop_size / hparams.sample_rate
 
             boundaries.append(boundary_interval)
