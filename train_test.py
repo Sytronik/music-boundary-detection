@@ -55,6 +55,8 @@ class Runner(object):
             self.T_12s = 0
             self.thrs_pred = 0
 
+        self.frame2time = hparams.hop_size / hparams.sample_rate
+
         # optimizer and scheduler
         self.optimizer = AdamW(self.model.parameters(),
                                lr=hparams.learning_rate,
@@ -74,51 +76,14 @@ class Runner(object):
         # self.acc_last_restart = 0
 
         # device
-        if hparams.device == 'cpu':
-            self.device = torch.device('cpu')
-            self.out_device = torch.device('cpu')
-            summary_device = 'cpu'
-            self.str_device = 'cpu'
-        else:
-            if type(hparams.device) == int:
-                device = [hparams.device]
-            elif type(hparams.device) == str:
-                device = [int(hparams.device[-1])]
-            else:  # sequence of devices
-                if type(hparams.device[0]) == int:
-                    device = hparams.device
-                else:
-                    device = [int(d[-1]) for d in hparams.device]
-
-            if type(hparams.out_device) == int:
-                out_device = torch.device(f'cuda:{hparams.out_device}')
-            else:
-                out_device = torch.device(hparams.out_device)
-
-            self.device = torch.device(f'cuda:{device[0]}')
-            self.out_device = out_device
-
-            if len(device) > 1:
-                self.model = nn.DataParallel(self.model,
-                                             device_ids=device,
-                                             output_device=out_device)
-                self.str_device = ', '.join([f'cuda:{d}' for d in device])
-            else:
-                self.str_device = str(self.device)
-
-            self.model.cuda(device[0])
-            self.criterion.cuda(out_device)
-            if self.sigmoid:
-                self.sigmoid.cuda(device[0])
-            torch.cuda.set_device(device[0])
-            summary_device = 'cuda'
+        device_for_summary = self.init_device(hparams.device, hparams.out_device)
 
         # summary
         self.writer = SummaryWriter(logdir=hparams.logdir)
         print_to_file(Path(self.writer.logdir, 'summary.txt'),
                       summary,
                       (self.model, (2, 128, 256)),
-                      dict(device=summary_device)
+                      dict(device=device_for_summary)
                       )
 
         # save hyperparameters
@@ -126,6 +91,62 @@ class Runner(object):
             for var in vars(hparams):
                 value = getattr(hparams, var)
                 print(f'{var}: {value}', file=f)
+
+    def init_device(self, device, out_device) -> str:
+        if device == 'cpu':
+            self.device = torch.device('cpu')
+            self.out_device = torch.device('cpu')
+            self.str_device = 'cpu'
+            return 'cpu'
+
+        # device type
+        if type(device) == int:
+            device = [device]
+        elif type(device) == str:
+            device = [int(device[-1])]
+        else:  # sequence of devices
+            if type(device[0]) == int:
+                device = device
+            else:
+                device = [int(d[-1]) for d in device]
+
+        # out_device type
+        if type(out_device) == int:
+            out_device = torch.device(f'cuda:{out_device}')
+        else:
+            out_device = torch.device(out_device)
+
+        self.device = torch.device(f'cuda:{device[0]}')
+        self.out_device = out_device
+
+        if len(device) > 1:
+            self.model = nn.DataParallel(self.model,
+                                         device_ids=device,
+                                         output_device=out_device)
+            self.str_device = ', '.join([f'cuda:{d}' for d in device])
+        else:
+            self.str_device = str(self.device)
+
+        self.model.cuda(device[0])
+        self.criterion.cuda(out_device)
+        if self.sigmoid:
+            self.sigmoid.cuda(device[0])
+        torch.cuda.set_device(device[0])
+        return 'cuda'
+
+    def calc_loss(self, y: Tensor, out: Tensor, len_x: List[int]):
+        loss = torch.zeros(1, device=self.out_device)
+        if self.class_weight is not None:
+            weight = (y > 0).float() * self.class_weight[1].item()
+            weight += (y == 0).float() * self.class_weight[0].item()
+            for ii, T in enumerate(len_x):
+                loss_no_red = self.criterion(out[ii:ii + 1, ..., :T], y[ii:ii + 1, :T])
+                loss += (loss_no_red * weight[ii:ii + 1, :T]).sum() / T
+        else:
+            for ii, T in enumerate(len_x):
+                loss += self.criterion(out[ii:ii + 1, ..., :T], y[ii:ii + 1, :T])
+
+        return loss
 
     def predict(self, out: ndarray, len_x: List[int]) -> List[ndarray]:
         """ peak-picking prediction
@@ -155,15 +176,30 @@ class Runner(object):
                 if item[idx] - self.thrs_pred * np.mean(item[i_first:i_last]) > 0:
                     boundary_idx.append(idx)
 
-            boundary_interval = np.array([[0]+boundary_idx, boundary_idx+[T]], dtype=np.float64).T
-            boundary_interval *= hparams.hop_size / hparams.sample_rate
+            boundary_interval = np.array([[0] + boundary_idx, boundary_idx + [T]], dtype=np.float64).T
+            boundary_interval *= self.frame2time
 
             boundaries.append(boundary_interval)
 
         return boundaries
 
+    def evaluate(self, y_np: ndarray, boundaries: List[ndarray],
+                 out_np: ndarray, prediction: List[ndarray], len_x: List[int]):
+        if self.ch_out == 1:
+            acc = np.array([0., 0., 0., 0., 0.])
+            for item_truth, item_pred, item_out in zip(boundaries, prediction, out_np):
+                eval_result = mir_eval.segment.detection(item_truth, item_pred, trim=True)
+                acc += np.array([*eval_result, item_out.mean(), item_out.std()])
+        else:
+            acc = 0.
+            for ii, T in enumerate(len_x):
+                corrected = (prediction[ii, :T] == y_np[ii, :T]).sum().item()
+                acc += corrected / T / self.ch_out
+
+        return acc
+
     # Running model for train, test and validation.
-    def run(self, dataloader, mode, epoch):
+    def run(self, dataloader, mode: str, epoch: int):
         self.model.train() if mode == 'train' else self.model.eval()
 
         avg_loss = 0.
@@ -189,39 +225,22 @@ class Runner(object):
 
             # loss
             if mode != 'test':
-                loss = torch.zeros(1, device=self.out_device)
-                if self.class_weight is not None:
-                    weight = (y > 0).float() * self.class_weight[1].item()
-                    weight += (y == 0).float() * self.class_weight[0].item()
-                    for ii, T in enumerate(len_x):
-                        loss_no_red = self.criterion(out[ii:ii + 1, ..., :T], y[ii:ii + 1, :T])
-                        loss += (loss_no_red * weight[ii:ii + 1, :T]).sum() / T
-                else:
-                    for ii, T in enumerate(len_x):
-                        loss += self.criterion(out[ii:ii + 1, ..., :T], y[ii:ii + 1, :T])
-
-                # for T, item_y, item_out in zip(len_x, y, out):
-                #     loss += self.criterion(item_out[..., :T], item_y[..., :T]) / int(T)
+                loss = self.calc_loss(y, out, len_x)
             else:
                 loss = 0
 
             if self.ch_out == 1:
-                # prediction = (out > 0.5).cpu().int()
                 out_np = out.detach().cpu().numpy()
+                # prediction = (out > 0.5).cpu().int()
                 prediction = self.predict(out_np, len_x)
-                acc = np.array([0., 0., 0.])
-                for item_pred, item_truth in zip(prediction, boundaries):
-                    eval_result = mir_eval.segment.detection(item_truth, item_pred, trim=True)
-                    acc += np.array(eval_result)
             else:
                 out_np = None
                 prediction = out.argmax(1).cpu().int().numpy()
-                acc = 0.
-                for ii, T in enumerate(len_x):
-                    corrected = (prediction[ii, :T] == y_np[ii, :T]).sum().item()
-                    acc += corrected / T / self.ch_out
+
+            acc = self.evaluate(y_np, boundaries, out_np, prediction, len_x)
 
             if mode == 'train':
+                # backward
                 self.optimizer.zero_grad()
                 loss.backward()
                 self.optimizer.step()
@@ -276,16 +295,18 @@ class Runner(object):
         # if last_restart > 0 and epoch == self.scheduler.last_restart or train_acc >= 0.999:
         #     if (self.loss_last_restart * self.stop_thr < valid_loss
         #             or self.acc_last_restart + self.stop_thr_acc > valid_acc):
+        #         # stop at the last restart epoch
         #         self.model.load_state_dict(
         #             torch.load(
         #                 Path(self.writer.logdir, f'{last_restart}.pt')
         #             )
         #         )
         #         return last_restart
-        #     elif train_acc >= 0.999:
+        #     elif train_acc >= 0.999:  # stop here
         #         return epoch
         #
-        # # if epoch == self.scheduler.last_restart:
+        # # save state at restart
+        # if epoch == self.scheduler.last_restart:
         #     if epoch > 0:
         #         torch.save(self.model.state_dict(),
         #                    Path(self.writer.logdir, f'{epoch}.pt'))
@@ -308,8 +329,11 @@ def main():
             precision=['Multiline', ['precision/train', 'precision/valid']],
             recall=['Multiline', ['recall/train', 'recall/valid']],
             F1=['Multiline', ['F1/train', 'F1/valid']],
+            mean=['Multiline', ['mean/train', 'mean/valid']],
+            std=['Multiline', ['std/train', 'std/valid']],
         ),
     ))
+    metrics = ('precision', 'recall', 'F1', 'mean', 'std')
 
     epoch = 0
     print(f'Training on {runner.str_device}')
@@ -319,18 +343,16 @@ def main():
         train_loss, train_acc = runner.run(train_loader, 'train', epoch)
         runner.writer.add_scalar('loss/train', train_loss, epoch)
         if type(train_acc) == ndarray:
-            runner.writer.add_scalar('precision/train', train_acc[0], epoch)
-            runner.writer.add_scalar('recall/train', train_acc[1], epoch)
-            runner.writer.add_scalar('F1/train', train_acc[2], epoch)
+            for idx, name in enumerate(metrics):
+                runner.writer.add_scalar(f'{name}/train', train_acc[idx], epoch)
         else:
             runner.writer.add_scalar('accuracy/train', train_acc, epoch)
 
         valid_loss, valid_acc = runner.run(valid_loader, 'valid', epoch)
         runner.writer.add_scalar('loss/valid', valid_loss, epoch)
         if type(valid_acc) == ndarray:
-            runner.writer.add_scalar('precision/valid', valid_acc[0], epoch)
-            runner.writer.add_scalar('recall/valid', valid_acc[1], epoch)
-            runner.writer.add_scalar('F1/valid', valid_acc[2], epoch)
+            for idx, name in enumerate(metrics):
+                runner.writer.add_scalar(f'{name}/valid', valid_acc[idx], epoch)
         else:
             runner.writer.add_scalar('accuracy/valid', valid_acc, epoch)
 
@@ -348,6 +370,7 @@ def main():
 
     # _, test_acc = runner.run(test_loader, 'test', epoch)
     print('Training Finished')
+
     # print(f'Test Accuracy: {100 * test_acc:.2f} %')
     # runner.writer.add_text('Test Accuracy', f'{100 * test_acc:.2f} %', epoch)
     torch.save(runner.model.state_dict(), Path(runner.writer.logdir, 'state_dict.pt'))
