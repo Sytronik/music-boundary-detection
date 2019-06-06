@@ -70,9 +70,9 @@ class HParams(object):
     def __post_init__(self):
         # self.dataset_path = dict(train='./SALAMI',
         self.path_dataset = dict(train=Path('/salami-data-public'),
-                                 test=Path('/SOUNDLAB_MBD'))
+                                 test=Path('/soundlab-salami-test'))
         self.path_feature = dict(train=Path('/salami-data-public/feature'),
-                                 test=Path('/SOUNDLAB_MBD/feature'))
+                                 test=Path('/soundlab-salami-test/feature'))
 
         # self.bans = dict(pitchstep=[-1, 1],
         #                  noise_db=[-24, -30, -36],
