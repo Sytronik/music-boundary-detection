@@ -56,6 +56,7 @@ class CosineLRWithRestarts():
         self.restart_period = restart_period
         self.restarts = 0
         self.t_epoch = -1
+        self.last_restart = 0
 
     def _schedule_eta(self):
         """
@@ -85,6 +86,7 @@ class CosineLRWithRestarts():
         if self.t_epoch % self.restart_period < self.t_epoch:
             if self.verbose:
                 print(f'Restart at epoch {self.last_epoch}')
+            self.last_restart = self.last_epoch - 1
             self.restart_period *= self.t_mult
             self.restarts += 1
             self.t_epoch = 0
