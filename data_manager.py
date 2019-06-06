@@ -61,7 +61,7 @@ class Normalization:
         # Calculate summation & size (parallel)
         list_fn = (np.size, cls._sum)
         pool_loader = mp.Pool(2)
-        pool_calc = mp.Pool(min(mp.cpu_count()-2, 6))
+        pool_calc = mp.Pool(min(mp.cpu_count() - 2, 6))
         with mp.Manager() as manager:
             queue_data = manager.Queue()
             pool_loader.starmap_async(cls._load_data,
@@ -145,7 +145,7 @@ class SALAMIDataset(Dataset):
         self.all_boundaries = dict(**np.load(self._PATH / 'boundary_indexes.npz'))
         for s_song_id, boundary_idx in self.all_boundaries.items():
             length = len(boundary_idx)
-            boundary_interval = np.zeros((length+1, 2))
+            boundary_interval = np.zeros((length + 1, 2))
             boundary_interval[1:, 0] = boundary_idx
             boundary_interval[:-1, 1] = boundary_idx
             boundary_interval[-1, 1] = len(self.all_ys[s_song_id])
@@ -225,10 +225,10 @@ class SALAMIDataset(Dataset):
         x = torch.tensor(np.load(f), dtype=torch.float32)
         y = self.all_ys[s_song_id]
         boundaries = self.all_boundaries[s_song_id]
-        len_x = x.shape[2]
+        T = x.shape[2]
         song_id = int(s_song_id)
 
-        return x, y, boundaries, len_x, song_id
+        return x, y, boundaries, T, song_id
 
     def __len__(self):
         return len(self.all_files)
@@ -250,10 +250,10 @@ class SALAMIDataset(Dataset):
 
         batch_boundaries = [item[2] for item in batch]
 
-        len_xs = [item[3] for item in batch]
+        Ts = [item[3] for item in batch]
         batch_ids = [item[4] for item in batch]
 
-        return batch_x, batch_y, batch_boundaries, len_xs, batch_ids
+        return batch_x, batch_y, batch_boundaries, Ts, batch_ids
 
     @classmethod
     def split(cls, dataset, ratio: Sequence[float]) -> Sequence:
@@ -295,34 +295,21 @@ class SALAMIDataset(Dataset):
 def get_dataloader(hparams):
     salami = SALAMIDataset('train', hparams)
     train_set, valid_set = SALAMIDataset.split(salami, (hparams.train_ratio, -1))
-    # test_set = SALAMIDataset('test', hparams,
-    #                          normalization=salami.normalization,
-    #                          num_classes=salami.num_classes,
-    #                          sect_names=salami.sect_names,
-    #                          dtype_y=salami.dtype_y,
-    #                          )
+    test_set = SALAMIDataset('test', hparams,
+                             normalization=salami.normalization,
+                             num_classes=salami.num_classes,
+                             sect_names=salami.sect_names,
+                             dtype_y=salami.dtype_y,
+                             )
 
-    train_loader = DataLoader(train_set,
-                              batch_size=hparams.batch_size,
-                              shuffle=True,
-                              drop_last=False,
-                              num_workers=hparams.num_workers,
-                              pin_memory=True,
-                              collate_fn=SALAMIDataset.pad_collate)
-    valid_loader = DataLoader(valid_set,
-                              batch_size=hparams.batch_size,
-                              shuffle=False,
-                              drop_last=False,
-                              num_workers=hparams.num_workers,
-                              pin_memory=True,
-                              collate_fn=SALAMIDataset.pad_collate)
-    # test_loader = DataLoader(test_set,
-    #                          batch_size=hparams.batch_size,
-    #                          shuffle=False,
-    #                          drop_last=False,
-    #                          num_workers=hparams.num_workers,
-    #                          pin_memory=True,
-    #                          collate_fn=SALAMIDataset.pad_collate)
+    common_kwargs = dict(batch_size=hparams.batch_size,
+                         drop_last=False,
+                         num_workers=hparams.num_workers,
+                         pin_memory=True,
+                         collate_fn=SALAMIDataset.pad_collate)
+    train_loader = DataLoader(train_set, shuffle=True, **common_kwargs)
+    valid_loader = DataLoader(valid_set, shuffle=False, **common_kwargs)
+    test_loader = DataLoader(test_set, shuffle=False, **common_kwargs)
 
-    # return train_loader, valid_loader, test_loader
-    return train_loader, valid_loader, None
+    return train_loader, valid_loader, test_loader
+    # return train_loader, valid_loader, None
