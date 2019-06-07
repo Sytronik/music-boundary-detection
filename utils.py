@@ -65,7 +65,7 @@ def draw_lineplot(t_axis: ndarray, score: ndarray, prediction: ndarray, truth: n
     # ax.set_xticks(truth)
     ax.set_yticks([0, 0.5, 1])
     ax.grid(True, axis='y')
-    ax.set_xlabel('time frame index')
+    ax.set_xlabel('time (sec)')
     ax.set_ylabel('boundary score')
     fig.tight_layout()
     return fig
