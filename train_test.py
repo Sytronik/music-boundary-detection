@@ -152,10 +152,9 @@ class Runner(object):
                     candid_idx.append(idx)
 
             boundary_idx = []
+            threshold = np.mean(out[candid_idx])
             for idx in candid_idx:
-                i_first = max(idx - self.T_12s, 0)
-                i_last = min(idx + self.T_6s + 1, T)
-                if item[idx] - self.thrs_pred * np.mean(item[i_first:i_last]) > 0:
+                if item[idx] - threshold > 0:
                     boundary_idx.append(idx)
 
             boundary_interval = np.array([[0] + boundary_idx,
