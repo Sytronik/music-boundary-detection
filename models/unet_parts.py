@@ -117,12 +117,14 @@ class FusionNetBlock(nn.Module):
 
 
 class InConv(nn.Module):
-    def __init__(self, in_ch: int, out_ch: int, use_cbam=False):
+    def __init__(self, in_ch: int, out_ch: int,
+                 kernel_size=(3, 3), use_cbam=False):
         super().__init__()
+        padding = (kernel_size[0] // 2, kernel_size[1] // 2)
         # self.block = FusionNetBlock(in_ch, out_ch, nn.ReLU(inplace=True), use_cbam=use_cbam)
         self.block = nn.Sequential(
-            ConvBNAct(in_ch, out_ch, nn.ReLU(inplace=True), (3, 3), (1, 1)),
-            ConvBNAct(out_ch, out_ch, nn.ReLU(inplace=True), (3, 3), (1, 1)),
+            ConvBNAct(in_ch, out_ch, nn.ReLU(inplace=True), kernel_size, padding),
+            ConvBNAct(out_ch, out_ch, nn.ReLU(inplace=True), kernel_size, padding),
         )
         # self.conv = ResidualBlock(in_ch, out_ch)
 
@@ -133,14 +135,15 @@ class InConv(nn.Module):
 
 class DownAndConv(nn.Module):
     def __init__(self, in_ch: int, out_ch: int,
-                 hidden_ch=0, groups=0, use_cbam=False):
+                 hidden_ch=0, groups=0, kernel_size=(3, 3), use_cbam=False):
         super().__init__()
+        padding = (kernel_size[0] // 2, kernel_size[1] // 2)
         self.pool = nn.MaxPool2d((2, 2))
 
         # self.block = FusionNetBlock(in_ch, out_ch, nn.ReLU(inplace=True), use_cbam=use_cbam)
         self.block = nn.Sequential(
-            ConvBNAct(in_ch, out_ch, nn.ReLU(inplace=True), (3, 3), (1, 1)),
-            ConvBNAct(out_ch, out_ch, nn.ReLU(inplace=True), (3, 3), (1, 1)),
+            ConvBNAct(in_ch, out_ch, nn.ReLU(inplace=True), kernel_size, padding),
+            ConvBNAct(out_ch, out_ch, nn.ReLU(inplace=True), kernel_size, padding),
         )
         # if not hidden_ch:
         #     hidden_ch = min(in_ch, out_ch) // 2
@@ -157,9 +160,9 @@ class DownAndConv(nn.Module):
 
 class UpAndConv(nn.Module):
     def __init__(self, in_ch: int, out_ch: int,
-                 hidden_ch=0, groups=0, bilinear=False, use_cbam=False):
+                 hidden_ch=0, groups=0, bilinear=False, kernel_size=(3, 3), use_cbam=False):
         super().__init__()
-
+        padding = (kernel_size[0] // 2, kernel_size[1] // 2)
         if bilinear:
             self.up = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
         else:
@@ -167,8 +170,8 @@ class UpAndConv(nn.Module):
 
         # self.block = FusionNetBlock(out_ch, out_ch, nn.ReLU(inplace=True), use_cbam=use_cbam)
         self.block = nn.Sequential(
-            ConvBNAct(out_ch, out_ch, nn.ReLU(inplace=True), (3, 3), (1, 1)),
-            ConvBNAct(out_ch, out_ch, nn.ReLU(inplace=True), (3, 3), (1, 1)),
+            ConvBNAct(out_ch, out_ch, nn.ReLU(inplace=True), kernel_size, padding),
+            ConvBNAct(out_ch, out_ch, nn.ReLU(inplace=True), kernel_size, padding),
         )
 
         # if not hidden_ch:

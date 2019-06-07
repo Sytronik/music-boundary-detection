@@ -30,7 +30,7 @@ class HParams(object):
     num_mels: int = 128
     refresh_normconst: bool = False
     output_type: str = 'boundary_scores'
-    len_gaussian_kernel: int = 21
+    len_gaussian_kernel: int = 31  # 51~101
 
     # augmentation
     # pitchstep: Tuple[int] = (0,)
@@ -81,7 +81,7 @@ class HParams(object):
 
         self.model = dict(ch_base=8,
                           depth=4,
-                          use_cbam=False,
+                          kernel_size=(3, 3),
                           )
         self.scheduler = dict(restart_period=4,
                               t_mult=2,
