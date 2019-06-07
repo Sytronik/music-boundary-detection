@@ -152,7 +152,7 @@ class Runner(object):
                     candid_idx.append(idx)
 
             boundary_idx = []
-            threshold = np.mean(out[candid_idx])
+            threshold = np.mean(item[candid_idx])
             for idx in candid_idx:
                 if item[idx] - threshold > 0:
                     boundary_idx.append(idx)
