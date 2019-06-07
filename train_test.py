@@ -40,7 +40,6 @@ class Runner(object):
         self.frame2time = hparams.hop_size / hparams.sample_rate
         self.T_6s = round(6 / self.frame2time) - 1
         self.T_12s = round(12 / self.frame2time) - 1
-        self.thrs_pred = hparams.thrs_pred
         self.metrics = ('precision', 'recall', 'F1', 'mean', 'std')
 
         # optimizer and scheduler

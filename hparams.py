@@ -47,7 +47,6 @@ class HParams(object):
 
     # Model Parameters
     model: Dict[str, Any] = field(init=False)
-    thrs_pred: float = 1.1
 
     # Training Parameters
     scheduler: Dict[str, Any] = field(init=False)
