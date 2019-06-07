@@ -6,7 +6,7 @@ from .unet_parts import InConv, DownAndConv, UpAndConv, OutConv
 
 
 class UNet(nn.Module):
-    def __init__(self, ch_in, ch_out, ch_base=32, depth=4, kernel_size=(3, 3), stride=(1, 1)):
+    def __init__(self, ch_in, ch_out, ch_base=8, depth=4, kernel_size=(3, 3), stride=(1, 1)):
         super().__init__()
         self.inc = InConv(ch_in, ch_base,
                           kernel_size=kernel_size,

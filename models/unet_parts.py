@@ -46,35 +46,6 @@ class ConvBNAct(nn.Module):
         return self.cba(x)
 
 
-class ResNeXtBlock(nn.Module):
-    def __init__(self, in_ch, out_ch, act_fn, hidden_ch=-1, *, groups=-1, last_act_fn=True):
-        super().__init__()
-        if hidden_ch == -1:
-            hidden_ch = out_ch // 2
-        if groups == -1:
-            groups = out_ch // 8
-        self.skipcba = ConvBNAct(in_ch, out_ch, None, kernel_size=(1, 1), padding=(0, 0))
-
-        self.incba = ConvBNAct(in_ch, hidden_ch, act_fn, kernel_size=(1, 1), padding=(0, 0))
-        self.groupcba = ConvBNAct(hidden_ch, hidden_ch, act_fn, groups=groups)
-        self.outcba = ConvBNAct(hidden_ch, out_ch, None, kernel_size=(1, 1), padding=(0, 0))
-
-        self.act_fn = act_fn if last_act_fn else None
-
-    def forward(self, x):
-        residual = self.skipcba(x)
-
-        out = self.incba(x)
-        out = self.groupcba(out)
-        out = self.outcba(out)
-
-        out += residual
-        if self.act_fn:
-            out = self.act_fn(out)
-
-        return out
-
-
 # Residual block
 class ResidualBlock(nn.Module):
     def __init__(self, in_ch: int, out_ch: int, act_fn: nn.Module,
@@ -117,8 +88,7 @@ class FusionNetBlock(nn.Module):
 
 
 class InConv(nn.Module):
-    def __init__(self, in_ch: int, out_ch: int,
-                 kernel_size=(3, 3), use_cbam=False):
+    def __init__(self, in_ch: int, out_ch: int, kernel_size=(3, 3)):
         super().__init__()
         padding = (kernel_size[0] // 2, kernel_size[1] // 2)
         # self.block = FusionNetBlock(in_ch, out_ch, nn.ReLU(inplace=True), use_cbam=use_cbam)
@@ -134,9 +104,7 @@ class InConv(nn.Module):
 
 
 class DownAndConv(nn.Module):
-    def __init__(self, in_ch: int, out_ch: int,
-                 hidden_ch=0, groups=0, kernel_size=(3, 3), stride=(1, 1),
-                 use_cbam=False):
+    def __init__(self, in_ch: int, out_ch: int, kernel_size=(3, 3), stride=(1, 1)):
         super().__init__()
         padding = (kernel_size[0] // 2, kernel_size[1] // 2)
         self.pool = nn.MaxPool2d((2, 2))
@@ -146,12 +114,6 @@ class DownAndConv(nn.Module):
             ConvBNAct(in_ch, out_ch, nn.ReLU(inplace=True), kernel_size, padding, stride=stride),
             ConvBNAct(out_ch, out_ch, nn.ReLU(inplace=True), kernel_size, padding),
         )
-        # if not hidden_ch:
-        #     hidden_ch = min(in_ch, out_ch) // 2
-        # if not groups:
-        #     groups = min(in_ch, out_ch) // 8
-        # self.block = ResNeXtBlock(in_ch, out_ch, nn.ReLU(inplace=True), hidden_ch,
-        #                           groups=groups)
 
     def forward(self, x):
         x = self.pool(x)
@@ -160,8 +122,7 @@ class DownAndConv(nn.Module):
 
 
 class UpAndConv(nn.Module):
-    def __init__(self, in_ch: int, out_ch: int,
-                 hidden_ch=0, groups=0, bilinear=False, kernel_size=(3, 3), upsample=(2, 2)):
+    def __init__(self, in_ch: int, out_ch: int, bilinear=False, kernel_size=(3, 3), upsample=(2, 2)):
         super().__init__()
         padding = (kernel_size[0] // 2, kernel_size[1] // 2)
         if bilinear:
@@ -171,23 +132,16 @@ class UpAndConv(nn.Module):
 
         # self.block = FusionNetBlock(out_ch, out_ch, nn.ReLU(inplace=True), use_cbam=use_cbam)
         self.block = nn.Sequential(
-            ConvBNAct(out_ch, out_ch, nn.ReLU(inplace=True), kernel_size, padding),
+            ConvBNAct(in_ch, out_ch, nn.ReLU(inplace=True), kernel_size, padding),
             ConvBNAct(out_ch, out_ch, nn.ReLU(inplace=True), kernel_size, padding),
         )
-
-        # if not hidden_ch:
-        #     hidden_ch = min(in_ch, out_ch) // 2
-        # if not groups:
-        #     groups = min(in_ch, out_ch) // 8
-        # self.block = ResNeXtBlock(in_ch, out_ch, nn.ReLU(inplace=True), hidden_ch,
-        #                           groups=groups)
 
     def forward(self, x, x_skip):
         x = self.up(x)
         x, x_skip = force_size_same(x, x_skip)
 
-        # x = torch.cat([x_skip, x_decode], dim=1)
-        out = (x + x_skip) / 2
+        out = torch.cat((x, x_skip), dim=-3)
+        # out = (x + x_skip) / 2
         out = self.block(out)
         return out
 
