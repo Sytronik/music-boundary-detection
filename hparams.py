@@ -103,13 +103,15 @@ class HParams(object):
     def parse_argument(self, print_argument=True):
         parser = argparse.ArgumentParser()
         for var in vars(self):
-            value = getattr(hparams, var)
+            # value = getattr(hparams, var)
             argument = f'--{var}'
-            parser.add_argument(argument, type=type(value), default=value)
+            parser.add_argument(argument, type=str, default='')
 
         args = parser.parse_args()
         for var in vars(self):
-            setattr(hparams, var, getattr(args, var))
+            parsed = getattr(args, var)
+            if parsed != '':
+                setattr(hparams, var, eval(parsed))
 
         if print_argument:
             print('-------------------------')
