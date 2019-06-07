@@ -67,7 +67,7 @@ class Runner(object):
         self.writer = SummaryWriter(logdir=hparams.logdir)
         print_to_file(Path(self.writer.logdir, 'summary.txt'),
                       summary,
-                      (self.model, (2, 128, 256)),
+                      (self.model, (2, 128, 16*hparams.model['stride'][1]**4)),
                       dict(device=device_for_summary)
                       )
 
