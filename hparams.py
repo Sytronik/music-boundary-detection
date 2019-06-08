@@ -96,8 +96,9 @@ class HParams(object):
         return False
 
     # Function for parsing argument and set hyper parameters
-    def parse_argument(self, print_argument=True):
-        parser = argparse.ArgumentParser()
+    def parse_argument(self, parser=None, print_argument=True):
+        if not parser:
+            parser = argparse.ArgumentParser()
         for var in vars(self):
             # value = getattr(hparams, var)
             argument = f'--{var}'
@@ -117,6 +118,8 @@ class HParams(object):
                 value = getattr(hparams, var)
                 print(f'{var}: {value}')
             print('-------------------------')
+
+        return args
 
 
 hparams = HParams()

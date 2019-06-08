@@ -5,6 +5,7 @@ A file for training model for genre classification.
 Please check the device in hparams.py before you run this code.
 """
 import os
+from argparse import ArgumentParser
 import shutil
 from pathlib import Path
 from typing import List
@@ -65,17 +66,21 @@ class Runner(object):
 
         # summary
         self.writer = SummaryWriter(logdir=hparams.logdir)
-        print_to_file(Path(self.writer.logdir, 'summary.txt'),
-                      summary,
-                      (self.model, (2, 128, 16 * hparams.model['stride'][1]**4)),
-                      dict(device=device_for_summary)
-                      )
+        path_summary = Path(self.writer.logdir, 'summary.txt')
+        if not path_summary.exists():
+            print_to_file(path_summary,
+                          summary,
+                          (self.model, (2, 128, 16 * hparams.model['stride'][1]**4)),
+                          dict(device=device_for_summary)
+                          )
 
         # save hyperparameters
-        with Path(self.writer.logdir, 'hparams.txt').open('w') as f:
-            for var in vars(hparams):
-                value = getattr(hparams, var)
-                print(f'{var}: {value}', file=f)
+        path_hparam = Path(self.writer.logdir, 'hparams.txt')
+        if not path_hparam.exists():
+            with path_hparam.open('w') as f:
+                for var in vars(hparams):
+                    value = getattr(hparams, var)
+                    print(f'{var}: {value}', file=f)
 
     def init_device(self, device, out_device) -> str:
         if device == 'cpu':
@@ -264,61 +269,72 @@ class Runner(object):
         return self.scheduler.last_restart
 
 
-def main():
+def main(test_epoch: int):
     train_loader, valid_loader, test_loader = data_manager.get_dataloader(hparams)
     runner = Runner(hparams,
                     len(train_loader.dataset),
                     train_loader.dataset.num_classes,
                     train_loader.dataset.class_weight)
 
-    dict_custom_scalars = dict(
-        loss=['Multiline', ['loss/train', 'loss/valid']],
-    )
-    for name in runner.metrics:
-        dict_custom_scalars[name] = ['Multiline', [f'{name}/train', f'{name}/valid']]
-    runner.writer.add_custom_scalars(dict(training=dict_custom_scalars))
+    if test_epoch == -1:
+        dict_custom_scalars = dict(
+            loss=['Multiline', ['loss/train', 'loss/valid']],
+        )
+        for name in runner.metrics:
+            dict_custom_scalars[name] = ['Multiline', [f'{name}/train', f'{name}/valid']]
+        runner.writer.add_custom_scalars(dict(training=dict_custom_scalars))
 
-    epoch = 0
-    epoch_last_restart = -1
-    print(f'Training on {runner.str_device}')
-    for epoch in range(hparams.num_epochs):
-        # runner.writer.add_scalar('lr', runner.optimizer.param_groups[0]['lr'], epoch)
+        epoch = 0
+        epoch_last_restart = -1
+        print(f'Training on {runner.str_device}')
+        for epoch in range(hparams.num_epochs):
+            # runner.writer.add_scalar('lr', runner.optimizer.param_groups[0]['lr'], epoch)
 
-        train_loss, train_eval = runner.run(train_loader, 'train', epoch)
-        runner.writer.add_scalar('loss/train', train_loss, epoch)
-        for idx, name in enumerate(runner.metrics):
-            runner.writer.add_scalar(f'{name}/train', train_eval[idx], epoch)
+            train_loss, train_eval = runner.run(train_loader, 'train', epoch)
+            runner.writer.add_scalar('loss/train', train_loss, epoch)
+            for idx, name in enumerate(runner.metrics):
+                runner.writer.add_scalar(f'{name}/train', train_eval[idx], epoch)
 
-        valid_loss, valid_eval = runner.run(valid_loader, 'valid', epoch)
-        runner.writer.add_scalar('loss/valid', valid_loss, epoch)
-        for idx, name in enumerate(runner.metrics):
-            runner.writer.add_scalar(f'{name}/valid', valid_eval[idx], epoch)
+            valid_loss, valid_eval = runner.run(valid_loader, 'valid', epoch)
+            runner.writer.add_scalar('loss/valid', valid_loss, epoch)
+            for idx, name in enumerate(runner.metrics):
+                runner.writer.add_scalar(f'{name}/valid', valid_eval[idx], epoch)
 
-        epoch_last_restart = runner.step(epoch)
+            epoch_last_restart = runner.step(epoch)
 
-    torch.save(runner.model.state_dict(), Path(runner.writer.logdir, f'{epoch}.pt'))
-    print('Training Finished')
+        torch.save(runner.model.state_dict(), Path(runner.writer.logdir, f'{epoch}.pt'))
+        print('Training Finished')
+        test_epoch = epoch_last_restart
 
-    os.makedirs(Path(hparams.logdir, 'test'))
-    _, test_eval = runner.run(test_loader, 'test', epoch_last_restart)
+    path_test_result = Path(hparams.logdir, 'test')
+    if not path_test_result.exists():
+        os.makedirs(path_test_result)
+    _, test_eval = runner.run(test_loader, 'test', test_epoch)
 
-    str_eval = np.array2string(test_eval, precision=3)
+    str_eval = np.array2string(test_eval, precision=4)
     print(f'Testset Evaluation: {str_eval}')
-    runner.writer.add_text('Testset Evaluation', str_eval, epoch_last_restart)
+    runner.writer.add_text('Testset Evaluation', str_eval, test_epoch)
 
     runner.writer.close()
 
 
 if __name__ == '__main__':
-    hparams.parse_argument()
-    if list(Path(hparams.logdir).glob('events.out.tfevents.*')):
-        while True:
-            s = input(f'"{hparams.logdir}" already has tfevents. continue? (y/n)\n')
-            if s.lower() == 'y':
-                shutil.rmtree(hparams.logdir)
-                os.makedirs(hparams.logdir)
-                break
-            elif s.lower() == 'n':
-                exit()
+    parser = ArgumentParser()
+    parser.add_argument('--test', type=int)
 
-    main()
+    args = hparams.parse_argument(parser)
+    if hasattr(args, 'test'):
+        test_epoch = args.test
+    else:
+        test_epoch = -1
+        if list(Path(hparams.logdir).glob('events.out.tfevents.*')):
+            while True:
+                s = input(f'"{hparams.logdir}" already has tfevents. continue? (y/n)\n')
+                if s.lower() == 'y':
+                    shutil.rmtree(hparams.logdir)
+                    os.makedirs(hparams.logdir)
+                    break
+                elif s.lower() == 'n':
+                    exit()
+
+    main(test_epoch)
