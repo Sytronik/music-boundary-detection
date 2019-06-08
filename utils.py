@@ -54,19 +54,24 @@ def draw_segmap(song_id: int, segmap: ndarray, sect_names: List[str] = None):
     return fig
 
 
-def draw_lineplot(t_axis: ndarray, score: ndarray, prediction: ndarray, truth: ndarray, song_id: int):
+def draw_lineplot(t_axis: ndarray, score: ndarray, prediction: ndarray, truth: ndarray,
+                  song_id: int):
     fig = plt.figure(figsize=(len(score) // 1000, 2))
+
     plt.plot(t_axis, score, zorder=1)
-    plt.title(str(song_id))
+
     ax = plt.gca()
     ax.vlines(x=prediction, ymin=0.7, ymax=1, colors='r', label='prediction', zorder=2)
     ax.vlines(x=truth, ymin=0, ymax=0.3, colors='y', label='truth', zorder=2)
+
+    ax.set_title(str(song_id))
     ax.legend(loc='upper right')
     # ax.set_xticks(truth)
     ax.set_yticks([0, 0.5, 1])
     ax.grid(True, axis='y')
     ax.set_xlabel('time (sec)')
     ax.set_ylabel('boundary score')
+
     fig.tight_layout()
     return fig
 
@@ -94,7 +99,7 @@ def print_to_file(fname: Union[str, Path], fn: Callable, args=None, kwargs=None)
             fn(*args, **kwargs)
 
 
-def convert(a, astype: type, device: Union[int, torch.device] = None):
+def convert(a: Union[Tensor, ndarray], astype: type, device=None):
     if astype == Tensor:
         if type(a) == Tensor:
             return a.to(device)
