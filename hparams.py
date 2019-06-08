@@ -79,7 +79,7 @@ class HParams(object):
 
         self.model = dict(ch_base=8,
                           depth=4,
-                          kernel_size=(3, 9),
+                          kernel_size=(3, 11),
                           stride=(1, 1),
                           )
         self.scheduler = dict(restart_period=4,
