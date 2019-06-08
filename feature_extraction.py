@@ -36,7 +36,7 @@ def melspectrogram(y: ndarray, sr: int) -> ndarray:
     :return: (k, F, T) or (F, T).
     """
     if y.ndim == 1:
-        y = y.unsqueeze(0)  # (1, n)
+        y = y[np.newaxis, :]  # (1, n)
 
     S = []
     for item_y in y:
