@@ -29,7 +29,6 @@ class HParams(object):
     hop_size: int = 1024
     num_mels: int = 128
     refresh_normconst: bool = False
-    output_type: str = 'boundary_scores'
     len_gaussian_kernel: int = 31  # 51~101
 
     # augmentation
@@ -87,9 +86,6 @@ class HParams(object):
                               t_mult=2,
                               eta_threshold=1.5,
                               )
-
-        if self.output_type == 'boundary_scores':
-            self.output_type += f'_{self.len_gaussian_kernel}'
 
     def is_banned(self, f: Path):
         aug_coeffs = f.stem.split('_')[1:]

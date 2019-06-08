@@ -119,28 +119,28 @@ class Runner(object):
         torch.cuda.set_device(device[0])
         return 'cuda'
 
-    def calc_loss(self, y: Tensor, out: Tensor, len_x: List[int]):
+    def calc_loss(self, y: Tensor, out: Tensor, Ts: List[int]):
         loss = torch.zeros(1, device=self.out_device)
         weight = (y > 0).float() * self.class_weight[1].item()
         weight += (y == 0).float() * self.class_weight[0].item()
-        for ii, T in enumerate(len_x):
+        for ii, T in enumerate(Ts):
             loss_no_red = self.criterion(out[ii:ii + 1, ..., :T], y[ii:ii + 1, :T])
             loss += (loss_no_red * weight[ii:ii + 1, :T]).sum() / T
 
         return loss
 
-    def predict(self, out: ndarray, len_x: List[int]) -> List[ndarray]:
+    def predict(self, out: ndarray, Ts: List[int]) -> List[ndarray]:
         """ peak-picking prediction
 
         :param out: (B, T) or (T,)
-        :param len_x: length B list
+        :param Ts: length B list
         :return: length B list of boundary index ndarrays
         """
         if out.ndim == 1:
             out = [out]
 
         boundaries = []
-        for item, T in zip(out, len_x):
+        for item, T in zip(out, Ts):
             # candid_val = []
             candid_idx = []
             for idx in range(1, T - 1):
@@ -165,9 +165,9 @@ class Runner(object):
         return boundaries
 
     @staticmethod
-    def evaluate(boundaries: List[ndarray], out_np: ndarray, prediction: List[ndarray]):
+    def evaluate(reference: List[ndarray], prediction: List[ndarray], out_np: ndarray):
         result = np.zeros(5)
-        for item_truth, item_pred, item_out in zip(boundaries, prediction, out_np):
+        for item_truth, item_pred, item_out in zip(reference, prediction, out_np):
             mir_result = mir_eval.segment.detection(item_truth, item_pred, trim=True)
             result += np.array([*mir_result, item_out.mean(), item_out.std()])
 
@@ -189,7 +189,7 @@ class Runner(object):
         print()
         pbar = tqdm(dataloader, desc=f'{mode} {epoch:3d}', postfix='-', dynamic_ncols=True)
 
-        for i_batch, (x, y, boundaries, Ts, ids) in enumerate(pbar):
+        for i_batch, (x, y, intervals, Ts, ids) in enumerate(pbar):
             # data
             # y_np = y.int().numpy()
             x = x.to(self.device)  # B, C, F, T
@@ -209,7 +209,7 @@ class Runner(object):
             out_np = out.detach().cpu().numpy()
             prediction = self.predict(out_np, Ts)
 
-            eval_result = self.evaluate(boundaries, out_np, prediction)
+            eval_result = self.evaluate(intervals, prediction, out_np)
 
             if mode == 'train':
                 # backward
@@ -227,7 +227,7 @@ class Runner(object):
                     out_np_0 = out_np[0, :T_0]
                     t_axis = np.arange(T_0) * self.frame2time
                     pred_0 = prediction[0][1:, 0]
-                    b_idx_0 = boundaries[0][1:, 0]
+                    b_idx_0 = intervals[0][1:, 0]
                     fig = draw_lineplot(t_axis, out_np_0, pred_0, b_idx_0, id_0)
                     self.writer.add_figure(f'{mode}/out', fig, epoch)
                     np.save(Path(self.writer.logdir, f'{id_0}_{epoch}.npy'), out_np_0)
@@ -236,7 +236,7 @@ class Runner(object):
                         np.save(Path(self.writer.logdir, f'{id_0}_truth.npy'), b_idx_0)
             else:
                 for id_, item_truth, item_pred, item_out \
-                        in zip(ids, boundaries, prediction, out_np):
+                        in zip(ids, intervals, prediction, out_np):
                     np.save(Path(self.writer.logdir, 'test', f'{id_}_truth.npy'), item_truth)
                     np.save(Path(self.writer.logdir, 'test', f'{id_}.npy'), item_out)
                     np.save(Path(self.writer.logdir, 'test', f'{id_}_pred.npy'), item_pred)
@@ -273,7 +273,6 @@ def main():
 
     dict_custom_scalars = dict(
         loss=['Multiline', ['loss/train', 'loss/valid']],
-        accuracy=['Multiline', ['accuracy/train', 'accuracy/valid']],
     )
     for name in runner.metrics:
         dict_custom_scalars[name] = ['Multiline', [f'{name}/train', f'{name}/valid']]

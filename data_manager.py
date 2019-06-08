@@ -140,18 +140,14 @@ class SALAMIDataset(Dataset):
         self.all_files = sorted(self.all_files)
         # self.all_files = list(np.random.permutation(self.all_files).tolist())
 
-        self.all_ys = dict(**np.load(self._PATH / f'{hparams.output_type}.npz'))
-        self.all_ys = {k: torch.tensor(v, dtype=torch.float32) for k, v in self.all_ys.items()}
+        all_ys = dict(**np.load(
+            self._PATH / f'boundary_scores_{hparams.len_gaussian_kernel}.npz'
+        ))
+        self.all_ys = {
+            k: torch.tensor(v, dtype=torch.float32) for k, v in all_ys.items()
+        }
 
-        self.all_boundaries = dict(**np.load(self._PATH / 'boundary_indexes.npz'))
-        for s_song_id, boundary_idx in self.all_boundaries.items():
-            length = len(boundary_idx)
-            boundary_interval = np.zeros((length + 1, 2))
-            boundary_interval[1:, 0] = boundary_idx
-            boundary_interval[:-1, 1] = boundary_idx
-            boundary_interval[-1, 1] = len(self.all_ys[s_song_id])
-            boundary_interval *= hparams.hop_size / hparams.sample_rate
-            self.all_boundaries[s_song_id] = boundary_interval
+        self.all_intervals = dict(**np.load(self._PATH / 'boundary_intervals.npz'))
 
         if kind_data == 'train':
             f_normconst = self._PATH / 'normconst.npz'
@@ -195,11 +191,11 @@ class SALAMIDataset(Dataset):
 
         x = torch.tensor(np.load(f), dtype=torch.float32)
         y = self.all_ys[s_song_id]
-        boundaries = self.all_boundaries[s_song_id]
+        intervals = self.all_intervals[s_song_id]
         T = x.shape[2]
         song_id = int(s_song_id)
 
-        return x, y, boundaries, T, song_id
+        return x, y, intervals, T, song_id
 
     def __len__(self):
         return len(self.all_files)
@@ -219,12 +215,12 @@ class SALAMIDataset(Dataset):
         batch_y = [item[1] for item in batch]
         batch_y = pad_sequence(batch_y, batch_first=True)  # B, T
 
-        batch_boundaries = [item[2] for item in batch]
+        batch_intervals = [item[2] for item in batch]
 
         Ts = [item[3] for item in batch]
         batch_ids = [item[4] for item in batch]
 
-        return batch_x, batch_y, batch_boundaries, Ts, batch_ids
+        return batch_x, batch_y, batch_intervals, Ts, batch_ids
 
     @classmethod
     def split(cls, dataset, ratio: Sequence[float]) -> Sequence:
