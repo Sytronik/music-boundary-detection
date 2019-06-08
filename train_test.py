@@ -67,7 +67,7 @@ class Runner(object):
         self.writer = SummaryWriter(logdir=hparams.logdir)
         print_to_file(Path(self.writer.logdir, 'summary.txt'),
                       summary,
-                      (self.model, (2, 128, 16*hparams.model['stride'][1]**4)),
+                      (self.model, (2, 128, 16 * hparams.model['stride'][1]**4)),
                       dict(device=device_for_summary)
                       )
 
@@ -176,6 +176,12 @@ class Runner(object):
     # Running model for train, test and validation.
     def run(self, dataloader, mode: str, epoch: int):
         self.model.train() if mode == 'train' else self.model.eval()
+        if mode == 'test':
+            self.model.load_state_dict(
+                torch.load(
+                    Path(self.writer.logdir, f'{epoch}.pt')
+                )
+            )
 
         avg_loss = 0.
         avg_eval = 0.
@@ -235,8 +241,8 @@ class Runner(object):
                     np.save(Path(self.writer.logdir, 'test', f'{id_}.npy'), item_out)
                     np.save(Path(self.writer.logdir, 'test', f'{id_}_pred.npy'), item_pred)
 
-            s_acc = np.array2string(eval_result, precision=3)
-            pbar.set_postfix_str(f'{loss:.3f}, {s_acc}')
+            str_eval = np.array2string(eval_result, precision=3)
+            pbar.set_postfix_str(f'{loss:.3f}, {str_eval}')
 
             avg_loss += loss
             avg_eval += eval_result
@@ -247,34 +253,15 @@ class Runner(object):
         return avg_loss, avg_eval
 
     # Early stopping function for given validation loss
-    def early_stop(self, epoch, train_acc, valid_acc, valid_loss):
-        # TODO: stopping criterion
-        # last_restart = self.scheduler.last_restart
-        #
+    def step(self, epoch):
         self.scheduler.step()  # scheduler.last_restart can be updated
-        #
-        # if last_restart > 0 and epoch == self.scheduler.last_restart or train_acc >= 0.999:
-        #     if (self.loss_last_restart * self.stop_thr < valid_loss
-        #             or self.acc_last_restart + self.stop_thr_acc > valid_acc):
-        #         # stop at the last restart epoch
-        #         self.model.load_state_dict(
-        #             torch.load(
-        #                 Path(self.writer.logdir, f'{last_restart}.pt')
-        #             )
-        #         )
-        #         return last_restart
-        #     elif train_acc >= 0.999:  # stop here
-        #         return epoch
-        #
-        # # save state at restart
-        # if epoch == self.scheduler.last_restart:
-        #     if epoch > 0:
-        #         torch.save(self.model.state_dict(),
-        #                    Path(self.writer.logdir, f'{epoch}.pt'))
-        #     self.loss_last_restart = valid_loss
-        #     self.acc_last_restart = valid_acc
 
-        return 0
+        if epoch == self.scheduler.last_restart:
+            if epoch > 0:
+                torch.save(self.model.state_dict(),
+                           Path(self.writer.logdir, f'{epoch}.pt'))
+
+        return self.scheduler.last_restart
 
 
 def main():
@@ -293,6 +280,7 @@ def main():
     runner.writer.add_custom_scalars(dict(training=dict_custom_scalars))
 
     epoch = 0
+    epoch_last_restart = -1
     print(f'Training on {runner.str_device}')
     for epoch in range(hparams.num_epochs):
         # runner.writer.add_scalar('lr', runner.optimizer.param_groups[0]['lr'], epoch)
@@ -307,19 +295,18 @@ def main():
         for idx, name in enumerate(runner.metrics):
             runner.writer.add_scalar(f'{name}/valid', valid_eval[idx], epoch)
 
-        epoch_or_zero = runner.early_stop(epoch, train_eval, valid_eval, valid_loss)
-        if epoch_or_zero != 0:
-            epoch = epoch_or_zero
-            print(f'Early stopped at {epoch}')
-            break
+        epoch_last_restart = runner.step(epoch)
 
-    os.makedirs(Path(hparams.logdir, 'test'))
-    # _, test_acc = runner.run(test_loader, 'test', epoch)
+    torch.save(runner.model.state_dict(), Path(runner.writer.logdir, f'{epoch}.pt'))
     print('Training Finished')
 
-    # print(f'Test Accuracy: {100 * test_acc:.2f} %')
-    # runner.writer.add_text('Test Accuracy', f'{100 * test_acc:.2f} %', epoch)
-    torch.save(runner.model.state_dict(), Path(runner.writer.logdir, 'state_dict.pt'))
+    os.makedirs(Path(hparams.logdir, 'test'))
+    _, test_eval = runner.run(test_loader, 'test', epoch_last_restart)
+
+    str_eval = np.array2string(test_eval, precision=3)
+    print(f'Testset Evaluation: {str_eval}')
+    runner.writer.add_text('Testset Evaluation', str_eval, epoch_last_restart)
+
     runner.writer.close()
 
 
