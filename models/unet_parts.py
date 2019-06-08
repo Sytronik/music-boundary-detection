@@ -132,7 +132,7 @@ class UpAndConv(nn.Module):
 
         # self.block = FusionNetBlock(out_ch, out_ch, nn.ReLU(inplace=True), use_cbam=use_cbam)
         self.block = nn.Sequential(
-            ConvBNAct(in_ch, out_ch, nn.ReLU(inplace=True), kernel_size, padding),
+            ConvBNAct(out_ch, out_ch, nn.ReLU(inplace=True), kernel_size, padding),
             ConvBNAct(out_ch, out_ch, nn.ReLU(inplace=True), kernel_size, padding),
         )
 
@@ -140,8 +140,8 @@ class UpAndConv(nn.Module):
         x = self.up(x)
         x, x_skip = force_size_same(x, x_skip)
 
-        out = torch.cat((x, x_skip), dim=-3)
-        # out = (x + x_skip) / 2
+        # x = torch.cat([x_skip, x_decode], dim=1)
+        out = (x + x_skip) / 2
         out = self.block(out)
         return out
 
