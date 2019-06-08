@@ -320,13 +320,11 @@ def main(test_epoch: int):
 
 if __name__ == '__main__':
     parser = ArgumentParser()
-    parser.add_argument('--test', type=int)
+    parser.add_argument('--test', type=int, default=-1)
 
     args = hparams.parse_argument(parser)
-    if hasattr(args, 'test'):
-        test_epoch = args.test
-    else:
-        test_epoch = -1
+    test_epoch = args.test
+    if test_epoch == -1:
         if list(Path(hparams.logdir).glob('events.out.tfevents.*')):
             while True:
                 s = input(f'"{hparams.logdir}" already has tfevents. continue? (y/n)\n')
