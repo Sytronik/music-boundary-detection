@@ -187,7 +187,7 @@ class SALAMIDataset(Dataset):
 
         # open feature file and return
         f = self.all_files[idx]
-        s_song_id = f.name.split('_')[0]
+        s_song_id = f.stem.split('_')[0]
 
         x = torch.tensor(np.load(f), dtype=torch.float32)
         y = self.all_ys[s_song_id]
