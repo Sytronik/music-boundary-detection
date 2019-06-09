@@ -49,9 +49,9 @@ class HParams(object):
 
     # Training Parameters
     scheduler: Dict[str, Any] = field(init=False)
-    train_ratio = 0.7
+    train_ratio = 0.85
     batch_size: int = 2
-    num_epochs: int = 50
+    num_epochs: int = 70
     learning_rate: float = 1e-4
     weight_decay: float = 1e-3
 

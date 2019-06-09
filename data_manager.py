@@ -146,6 +146,7 @@ class SALAMIDataset(Dataset):
         self.all_ys = {
             k: torch.tensor(v, dtype=torch.float32) for k, v in all_ys.items()
         }
+        self.num_songs = len(self.all_ys.keys())
 
         self.all_intervals = dict(**np.load(self._PATH / 'boundary_intervals.npz'))
 
@@ -247,13 +248,17 @@ class SALAMIDataset(Dataset):
         if mask.sum() == 1:
             ratio[np.where(mask)] = 1 - ratio.sum()
 
-        idx_data = np.cumsum(np.insert(ratio, 0, 0) * len(dataset.all_files),
-                             dtype=int)
-        result = [copy(dataset) for _ in range(n_split)]
-        all_f_per = np.random.permutation(dataset.all_files).tolist()
+        idx_data = np.cumsum(np.insert(ratio, 0, 0) * dataset.num_songs, dtype=int)
+        result: List[SALAMIDataset] = [copy(dataset) for _ in range(n_split)]
+        all_files = dataset.all_files
+        all_song_per = np.random.permutation(list(dataset.all_ys.keys())).tolist()
 
         for ii in range(n_split):
-            result[ii].all_files = all_f_per[idx_data[ii]:idx_data[ii + 1]]
+            result[ii].all_files = []
+            part = all_song_per[idx_data[ii]:idx_data[ii + 1]]
+            for song in part:
+                result[ii].all_files += [f for f in all_files if f.name.startswith(song)]
+            result[ii].num_songs = len(part)
 
         return result
 
