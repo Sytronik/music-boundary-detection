@@ -60,12 +60,12 @@ def melspectrogram(y: ndarray, sr: int) -> ndarray:
     return logmel_S
 
 
-def extract_feature(song_id: int, path_audio: Path, path_annot: Path) \
-        -> Optional[Tuple[ndarray, ndarray]]:
+def extract_feature(song_id: int, path_audio: Path, ) \
+        -> int:
     y, _ = librosa.load(str(path_audio), sr=sample_rate, mono=False)  # 2, n
     mel = None
 
-    if b_extract_input and kind_data == 'train':
+    if kind_data == 'train':
         ys_pitch = {0: y}
         for step, db, F in product(pitchstep, noise_db, max_F_rm):
             # pitch shift
@@ -90,18 +90,15 @@ def extract_feature(song_id: int, path_audio: Path, path_annot: Path) \
                 mel[..., f0:f0 + height, :] = 0
 
             np.save(hparams.path_feature[kind_data] / f'{song_id}_{step}_{db}_{F}.npy', mel)
-    elif b_extract_input:
+    else:
         mel = melspectrogram(y, sample_rate)
         np.save(hparams.path_feature[kind_data] / f'{song_id}.npy', mel)
 
-    if not b_extract_output:
-        return None
+    return mel.shape[-1]
 
-    if mel is None:
-        y = np.pad(y[0], int(hparams.fft_size // 2), mode='constant')
-        mel = librosa.util.frame(y, hparams.win_size, hparams.hop_size)
 
-    n_frames = np.arange(mel.shape[-1] + 1)
+def arrange_boundary_info(song_id: int, path_annot: Path, num_frame):
+    n_frames = np.arange(num_frame + 1)
     t_frames = n_frames * sample_period * hparams.hop_size
 
     t_boundaries: List = []
@@ -165,6 +162,38 @@ def extract_feature(song_id: int, path_audio: Path, path_annot: Path) \
     return boundary_score, boundary_interval
 
 
+def get_num_frame(path_audio: Path):
+    y, _ = librosa.load(str(path_audio), sr=sample_rate, mono=False)  # 2, n
+    y = np.pad(y[0], int(hparams.fft_size // 2), mode='constant')
+    frames = librosa.util.frame(y, hparams.win_size, hparams.hop_size)
+    return frames.shape[-1]
+
+
+def extract_or_arrange(song_id, path_audio, paths_annot):
+    if b_extract_input:
+        num_frame = extract_feature(song_id, path_audio)
+    elif b_extract_output:
+        num_frame = get_num_frame(path_audio)
+    else:
+        num_frame = 0
+
+    if b_extract_output:
+        boundary_score = []
+        boundary_interval = []
+
+        for path_annot in paths_annot:
+            score, interval = arrange_boundary_info(song_id, path_annot, num_frame)
+
+            boundary_score.append(score)
+            boundary_interval.append(interval)
+
+        boundary_score = np.array(boundary_score)
+        boundary_interval = np.array(boundary_interval)
+        return boundary_score, boundary_interval
+    else:
+        return None
+
+
 def main():
     songs = []
     boundary_scores = dict()
@@ -176,28 +205,35 @@ def main():
     with path_metadata.open('r', newline='') as f_metadata:
         pbar_meta = tqdm(csv.reader(f_metadata), dynamic_ncols=True)
         for idx, l_meta in enumerate(pbar_meta):
+            # read from metadata
             if idx == 0:
                 idx_discard_flag = l_meta.index('SONG_WAS_DISCARDED_FLAG')
                 continue
             song_id = int(l_meta[0])
 
+            # path of audio
             path_audio = path_audio_dir / f'{song_id}.mp3'
-            path_annot_1 = path_annot_dir / f'{song_id}/parsed/textfile1_uppercase.txt'
-            path_annot_2 = path_annot_dir / f'{song_id}/parsed/textfile2_uppercase.txt'
-            if path_annot_1.exists():
-                path_annot = path_annot_1
-            elif path_annot_2.exists():
-                path_annot = path_annot_2
-            else:
-                path_annot = None
-            if (not path_audio.exists() or l_meta[idx_discard_flag] == 'TRUE'
-                    or not path_annot):
+
+            # path of annotations
+            paths_annot = [None, None]
+            paths_annot[0] = path_annot_dir / f'{song_id}/parsed/textfile1_uppercase.txt'
+            paths_annot[1] = path_annot_dir / f'{song_id}/parsed/textfile2_uppercase.txt'
+            paths_annot = [p for p in paths_annot if p.exists()]
+
+            # exceptions
+            if (not path_audio.exists()
+                    or l_meta[idx_discard_flag] == 'TRUE'
+                    or not paths_annot):
                 continue
+
+            # apply
+            results[song_id] = pool.apply_async(extract_or_arrange,
+                                                (song_id, path_audio, paths_annot))
+            # results[song_id] = extract_or_arrange(song_id, path_audio)
+
+            # update song list
             songs.append(str(song_id))
             pbar_meta.set_postfix_str(f'[{len(songs)} songs]')
-            results[song_id] = pool.apply_async(extract_feature,
-                                                (song_id, path_audio, path_annot))
-            # results[song_id] = extract_feature(song_id, path_audio, path_annot)
 
     pbar = tqdm(results.items(), dynamic_ncols=True)
     for song_id, result in pbar:
@@ -220,7 +256,7 @@ def main():
         np.savez(path_feature / 'boundary_intervals.npz', **boundary_intervals)
 
         with (hparams.path_feature[kind_data] / 'songs.txt').open('w') as f:
-            f.writelines(songs)
+            f.write('\n'.join(songs))
 
 
 if __name__ == '__main__':

@@ -30,6 +30,7 @@ class HParams(object):
     num_mels: int = 128
     refresh_normconst: bool = False
     len_gaussian_kernel: int = 31  # 51~101
+    train_multi_annot: bool = True
 
     # augmentation
     # pitchstep: Tuple[int] = (0,)

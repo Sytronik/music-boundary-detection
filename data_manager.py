@@ -131,8 +131,9 @@ class Normalization:
 
 
 class SALAMIDataset(Dataset):
-    def __init__(self, kind_data: str, hparams, **kwargs):
+    def __init__(self, kind_data: str, hparams, multi_annot: bool = False, **kwargs):
         self._PATH: Path = hparams.path_feature[kind_data]
+        self.multi_annot = multi_annot
 
         self.all_files: List[Path] = [
             f for f in self._PATH.glob('*.npy') if not hparams.is_banned(f)
@@ -163,8 +164,17 @@ class SALAMIDataset(Dataset):
             # Calculate weight per class using no. of samples per class
             self.class_weight = np.zeros(self.num_classes, dtype=np.float32)
             for y in self.all_ys.values():
-                for label in y:
-                    self.class_weight[int(label > 0)] += 1
+                if y.shape[0] == 2:
+                    if self.multi_annot:
+                        increment = 0.5
+                    else:
+                        y = y[0:1]
+                        increment = 1
+                else:
+                    increment = 1
+                for y_single in y:
+                    for label in y_single:
+                        self.class_weight[int(label > 0)] += increment
             self.class_weight = self.class_weight.max() / self.class_weight
             self.class_weight = torch.from_numpy(self.class_weight)
         else:
@@ -193,6 +203,13 @@ class SALAMIDataset(Dataset):
         x = torch.tensor(np.load(f), dtype=torch.float32)
         y = self.all_ys[s_song_id]
         intervals = self.all_intervals[s_song_id]
+        if self.multi_annot and y.shape[0] == 2:
+            idx = np.random.randint(1)
+            y = y[idx]
+            intervals = intervals[idx]
+        else:
+            y = y[0]
+            intervals = intervals[0]
         T = x.shape[2]
         song_id = int(s_song_id)
 
@@ -265,9 +282,11 @@ class SALAMIDataset(Dataset):
 
 # Function to load numpy data and normalize, it returns dataloader for train, valid, test
 def get_dataloader(hparams):
-    salami = SALAMIDataset('train', hparams)
+    salami = SALAMIDataset('train', hparams, hparams.train_multi_annot)
     train_set, valid_set = SALAMIDataset.split(salami, (hparams.train_ratio, -1))
+    valid_set.multi_annot = False
     test_set = SALAMIDataset('test', hparams,
+                             multi_annot=False,
                              normalization=salami.normalization,
                              num_classes=salami.num_classes,
                              )
