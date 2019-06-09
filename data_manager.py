@@ -149,7 +149,9 @@ class SALAMIDataset(Dataset):
         }
         self.num_songs = len(self.all_ys.keys())
 
-        self.all_intervals = dict(**np.load(self._PATH / 'boundary_intervals.npz'))
+        self.all_intervals = dict(
+            **np.load(self._PATH / 'boundary_intervals.npz', allow_pickle=True)
+        )
 
         if kind_data == 'train':
             f_normconst = self._PATH / 'normconst.npz'
