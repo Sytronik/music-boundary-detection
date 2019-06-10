@@ -240,10 +240,10 @@ class Runner(object):
                     if epoch == 0:
                         np.save(Path(self.writer.logdir, f'{id_0}_truth.npy'), b_idx_0)
             else:
-                for id_, item_truth, item_pred, item_out \
-                        in zip(ids, intervals, prediction, out_np):
+                for id_, item_truth, item_pred, item_out, T \
+                        in zip(ids, intervals, prediction, out_np, Ts):
                     np.save(Path(self.writer.logdir, 'test', f'{id_}_truth.npy'), item_truth)
-                    np.save(Path(self.writer.logdir, 'test', f'{id_}.npy'), item_out)
+                    np.save(Path(self.writer.logdir, 'test', f'{id_}.npy'), item_out[:T])
                     np.save(Path(self.writer.logdir, 'test', f'{id_}_pred.npy'), item_pred)
 
             str_eval = np.array2string(eval_result, precision=3)
