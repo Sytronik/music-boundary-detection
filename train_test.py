@@ -187,6 +187,10 @@ class Runner(object):
                     Path(self.writer.logdir, f'{epoch}.pt')
                 )
             )
+            path_test_result = Path(self.writer.logdir, f'test_{epoch}')
+            os.makedirs(path_test_result, exist_ok=True)
+        else:
+            path_test_result = None
 
         avg_loss = 0.
         avg_eval = 0.
@@ -242,9 +246,9 @@ class Runner(object):
             else:
                 for id_, item_truth, item_pred, item_out, T \
                         in zip(ids, intervals, prediction, out_np, Ts):
-                    np.save(Path(self.writer.logdir, 'test', f'{id_}_truth.npy'), item_truth)
-                    np.save(Path(self.writer.logdir, 'test', f'{id_}.npy'), item_out[:T])
-                    np.save(Path(self.writer.logdir, 'test', f'{id_}_pred.npy'), item_pred)
+                    np.save(path_test_result / f'{id_}_truth.npy', item_truth)
+                    np.save(path_test_result / f'{id_}.npy', item_out[:T])
+                    np.save(path_test_result / f'{id_}_pred.npy', item_pred)
 
             str_eval = np.array2string(eval_result, precision=3)
             pbar.set_postfix_str(f'{loss:.3f}, {str_eval}')
@@ -306,9 +310,6 @@ def main(test_epoch: int):
         print('Training Finished')
         test_epoch = epoch_last_restart
 
-    path_test_result = Path(hparams.logdir, 'test')
-    if not path_test_result.exists():
-        os.makedirs(path_test_result)
     _, test_eval = runner.run(test_loader, 'test', test_epoch)
 
     str_eval = np.array2string(test_eval, precision=4)
