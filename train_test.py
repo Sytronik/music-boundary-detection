@@ -55,11 +55,7 @@ class Runner(object):
                                               )
         self.scheduler.step()
 
-        # TODO: variables for stopping criterion
-        # self.stop_thr = hparams.stop_thr
-        # self.stop_thr_acc = hparams.stop_thr_acc
-        # self.loss_last_restart = 1000
-        # self.acc_last_restart = 0
+        self.f1_last_restart = -1
 
         # device
         device_for_summary = self.init_device(hparams.device, hparams.out_device)
@@ -184,11 +180,11 @@ class Runner(object):
     def run(self, dataloader, mode: str, epoch: int):
         self.model.train() if mode == 'train' else self.model.eval()
         if mode == 'test':
-            self.model.load_state_dict(
-                torch.load(
-                    Path(self.writer.logdir, f'{epoch}.pt')
-                )
-            )
+            state_dict = torch.load(Path(self.writer.logdir, f'{epoch}.pt'))
+            try:
+                self.model.module.load_state_dict(state_dict)
+            except:
+                self.model.load_state_dict(state_dict)
             path_test_result = Path(self.writer.logdir, f'test_{epoch}')
             os.makedirs(path_test_result, exist_ok=True)
         else:
@@ -269,15 +265,18 @@ class Runner(object):
         return avg_loss, avg_eval
 
     # Early stopping function for given validation loss
-    def step(self, epoch):
+    def step(self, valid_f1, epoch):
         self.scheduler.step()  # scheduler.last_restart can be updated
 
         if epoch == self.scheduler.last_restart:
-            if epoch > 0:
-                torch.save(self.model.state_dict(),
+            if valid_f1 < self.f1_last_restart:
+                return self.scheduler.last_restart
+            else:
+                self.f1_last_restart = valid_f1
+                torch.save(self.model.module.state_dict(),
                            Path(self.writer.logdir, f'{epoch}.pt'))
 
-        return self.scheduler.last_restart
+        return 0
 
 
 def main(test_epoch: int):
@@ -296,7 +295,7 @@ def main(test_epoch: int):
         runner.writer.add_custom_scalars(dict(training=dict_custom_scalars))
 
         epoch = 0
-        epoch_last_restart = -1
+        stopped_epoch_or_zero = 0
         print(f'Training on {runner.str_device}')
         for epoch in range(hparams.num_epochs):
             # runner.writer.add_scalar('lr', runner.optimizer.param_groups[0]['lr'], epoch)
@@ -311,11 +310,13 @@ def main(test_epoch: int):
             for idx, name in enumerate(runner.metrics):
                 runner.writer.add_scalar(f'{name}/valid', valid_eval[idx], epoch)
 
-            epoch_last_restart = runner.step(epoch)
+            stopped_epoch_or_zero = runner.step(valid_eval[2], epoch)
+            if stopped_epoch_or_zero > 0:
+                break
 
-        torch.save(runner.model.state_dict(), Path(runner.writer.logdir, f'{epoch}.pt'))
+        torch.save(runner.model.module.state_dict(), Path(runner.writer.logdir, f'{epoch}.pt'))
         print('Training Finished')
-        test_epoch = epoch_last_restart
+        test_epoch = stopped_epoch_or_zero if stopped_epoch_or_zero > 0 else epoch
 
     _, test_eval = runner.run(test_loader, 'test', test_epoch)
 
