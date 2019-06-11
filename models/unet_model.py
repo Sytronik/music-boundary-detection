@@ -1,8 +1,8 @@
 # full assembly of the sub-parts to form the complete net
 
-import torch
 from torch import nn, Tensor
-from .unet_parts import InConv, DownAndConv, UpAndConv, OutConv
+
+from .unet_parts import DownAndConv, InConv, OutConv, UpAndConv
 
 
 class UNet(nn.Module):

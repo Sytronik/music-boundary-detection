@@ -1,15 +1,7 @@
-"""
-hparams.py
-
-A file sets hyper parameters for feature extraction and training.
-You can change parameters using argument.
-For example:
- $ python train_test.py --device=1 --batch_size=32.
-"""
 import argparse
-from dataclasses import dataclass, field
-from typing import List, Tuple, Dict, Union, Sequence, Any
 from pathlib import Path
+from typing import Any, Dict, List, Sequence, Tuple, Union
+from dataclasses import dataclass, field
 
 
 @dataclass
@@ -29,15 +21,12 @@ class HParams(object):
     hop_size: int = 1024
     num_mels: int = 128
     refresh_normconst: bool = False
-    len_gaussian_kernel: int = 31  # 51~101
+    len_gaussian_kernel: int = 31
     train_multi_annot: bool = True
 
     # augmentation
-    # pitchstep: Tuple[int] = (0,)
     pitchstep: Tuple[int] = (0, -1, 1)
-    # noise_db: Tuple[int] = (None,)
     noise_db: Tuple[int] = (None, -24, -30, -36)
-    # max_F_rm: Tuple[int] = (0,)
     max_F_rm: Tuple[int] = (0, 9, 15)
     bans: Dict[str, List[int]] = field(init=False)
     s_bans: Dict[str, List[str]] = field(init=False)
@@ -51,28 +40,24 @@ class HParams(object):
     # Training Parameters
     scheduler: Dict[str, Any] = field(init=False)
     train_ratio = 0.85
-    batch_size: int = 2
-    num_epochs: int = 70
+    batch_size: int = 4
+    num_epochs: int = 30
     learning_rate: float = 1e-4
-    weight_decay: float = 1e-3
+    weight_decay: float = 1e-2
 
     # Device-dependent Parameters
     # 'cpu', 'cuda:n', the cuda device no., or the tuple of the cuda device no.
-    device: Union[int, str, Sequence[str], Sequence[int]] = (0, 1)
-    out_device: Union[int, str] = 1
-    num_workers: int = 2
+    device: Union[int, str, Sequence[str], Sequence[int]] = (0, 1, 2, 3)
+    out_device: Union[int, str] = 3
+    num_workers: int = 4
 
     def __post_init__(self):
-        # self.dataset_path = dict(train='./SALAMI',
         self.path_dataset = dict(train=Path('/salami-data-public'),
                                  test=Path('/soundlab-salami-test'))
         self.path_feature = dict(train=Path('/salami-data-public/feature'),
                                  test=Path('/soundlab-salami-test/feature'))
 
-        # self.bans = dict(pitchstep=[-1, 1],
-        #                  noise_db=[-24, -30, -36],
-        #                  max_F_rm=[9, 15])
-        self.bans = dict(pitchstep=[-1, 1],
+        self.bans = dict(pitchstep=[],
                          noise_db=[-30, -36],
                          max_F_rm=[9])
 
@@ -83,7 +68,7 @@ class HParams(object):
                           kernel_size=(3, 11),
                           stride=(1, 1),
                           )
-        self.scheduler = dict(restart_period=4,
+        self.scheduler = dict(restart_period=2,
                               t_mult=2,
                               eta_threshold=1.5,
                               )
@@ -101,7 +86,6 @@ class HParams(object):
         if not parser:
             parser = argparse.ArgumentParser()
         for var in vars(self):
-            # value = getattr(hparams, var)
             argument = f'--{var}'
             parser.add_argument(argument, type=str, default='')
 
@@ -124,4 +108,3 @@ class HParams(object):
 
 
 hparams = HParams()
-# hparams.parse_argument()

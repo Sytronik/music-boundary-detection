@@ -1,12 +1,6 @@
-"""
-train_test.py
-
-A file for training model for genre classification.
-Please check the device in hparams.py before you run this code.
-"""
 import os
-from argparse import ArgumentParser
 import shutil
+from argparse import ArgumentParser
 from pathlib import Path
 from typing import List, Tuple
 
@@ -58,7 +52,7 @@ class Runner(object):
         self.f1_last_restart = -1
 
         # device
-        device_for_summary = self.init_device(hparams.device, hparams.out_device)
+        device_for_summary = self._init_device(hparams.device, hparams.out_device)
 
         # summary
         self.writer = SummaryWriter(logdir=hparams.logdir)
@@ -78,7 +72,7 @@ class Runner(object):
                     value = getattr(hparams, var)
                     print(f'{var}: {value}', file=f)
 
-    def init_device(self, device, out_device) -> str:
+    def _init_device(self, device, out_device) -> str:
         if device == 'cpu':
             self.device = torch.device('cpu')
             self.out_device = torch.device('cpu')

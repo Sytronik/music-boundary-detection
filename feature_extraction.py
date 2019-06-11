@@ -17,7 +17,7 @@ import os
 from argparse import ArgumentParser
 from itertools import product
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import List
 
 import librosa
 import numpy as np
@@ -60,8 +60,7 @@ def melspectrogram(y: ndarray, sr: int) -> ndarray:
     return logmel_S
 
 
-def extract_feature(song_id: int, path_audio: Path, ) \
-        -> int:
+def extract_feature(song_id: int, path_audio: Path) -> int:
     y, _ = librosa.load(str(path_audio), sr=sample_rate, mono=False)  # 2, n
     mel = None
 

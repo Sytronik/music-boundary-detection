@@ -137,8 +137,8 @@ def main(test_epoch: int, song_ids: List[int]):
         # figure
         fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(8, 5))
         # ax for colorbar
-        ax_cbar = make_axes_locatable(ax1).append_axes("right", size=0.1, pad=0.05)
-        ax_none = make_axes_locatable(ax2).append_axes("right", size=0.1, pad=0.05)
+        ax_cbar = make_axes_locatable(ax1).append_axes('right', size=0.1, pad=0.05)
+        ax_none = make_axes_locatable(ax2).append_axes('right', size=0.1, pad=0.05)
         ax_none.set_visible(False)
         c_vline_pred = 'C2'
         c_vline_truth = 'C9'
@@ -180,7 +180,7 @@ def main(test_epoch: int, song_ids: List[int]):
         ax2.set_xlabel('time (min:sec)')
 
         ax2.set_ylim(*ylim)
-        ax2.set_yticks([0,  1])
+        ax2.set_yticks([0, 1])
         ax2.set_yticks([threshold], minor=True)
         ax2.set_yticklabels(['threshold'], minor=True)
 
@@ -197,6 +197,6 @@ if __name__ == '__main__':
     parser.add_argument('--song', type=int, default=-1)
 
     args = hparams.parse_argument(parser, print_argument=False)
-    plt.rcParams['font.family'] = 'Arial'
+    plt.rc('font', family='Arial', size=12)
     songs = [args.song] if args.song > -1 else []
     main(args.epoch, songs)
