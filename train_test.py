@@ -8,7 +8,7 @@ import os
 from argparse import ArgumentParser
 import shutil
 from pathlib import Path
-from typing import List
+from typing import List, Tuple
 
 import mir_eval
 import numpy as np
@@ -134,7 +134,7 @@ class Runner(object):
 
         return loss
 
-    def predict(self, out: ndarray, Ts: List[int]) -> List[ndarray]:
+    def predict(self, out: ndarray, Ts: List[int]) -> Tuple[List[ndarray], List]:
         """ peak-picking prediction
 
         :param out: (B, T) or (T,)
@@ -145,6 +145,7 @@ class Runner(object):
             out = [out]
 
         boundaries = []
+        thresholds = []
         for item, T in zip(out, Ts):
             # candid_val = []
             candid_idx = []
@@ -166,8 +167,9 @@ class Runner(object):
             boundary_interval *= self.frame2time
 
             boundaries.append(boundary_interval)
+            thresholds.append(threshold)
 
-        return boundaries
+        return boundaries, thresholds
 
     @staticmethod
     def evaluate(reference: List[ndarray], prediction: List[ndarray], out_np: ndarray):
@@ -194,6 +196,7 @@ class Runner(object):
 
         avg_loss = 0.
         avg_eval = 0.
+        all_thresholds = []
         # all_pred = []  # all predictions (for confusion matrix)
         print()
         pbar = tqdm(dataloader, desc=f'{mode} {epoch:3d}', postfix='-', dynamic_ncols=True)
@@ -216,7 +219,7 @@ class Runner(object):
                 loss = 0
 
             out_np = out.detach().cpu().numpy()
-            prediction = self.predict(out_np, Ts)
+            prediction, thresholds = self.predict(out_np, Ts)
 
             eval_result = self.evaluate(intervals, prediction, out_np)
 
@@ -244,6 +247,7 @@ class Runner(object):
                     if epoch == 0:
                         np.save(Path(self.writer.logdir, f'{id_0}_truth.npy'), b_idx_0)
             else:
+                all_thresholds += thresholds
                 for id_, item_truth, item_pred, item_out, T \
                         in zip(ids, intervals, prediction, out_np, Ts):
                     np.save(path_test_result / f'{id_}_truth.npy', item_truth)
@@ -258,6 +262,9 @@ class Runner(object):
 
         avg_loss = avg_loss / len(dataloader.dataset)
         avg_eval = avg_eval / len(dataloader.dataset)
+
+        if mode == 'test':
+            np.save(path_test_result / f'thresholds.npy', all_thresholds)
 
         return avg_loss, avg_eval
 
