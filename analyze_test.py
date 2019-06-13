@@ -3,9 +3,10 @@ from argparse import ArgumentParser
 from collections import defaultdict
 from itertools import product
 from pathlib import Path
-from typing import List
+from typing import Set
 
 import librosa.display
+import matplotlib.ticker as tckr
 import matplotlib.pyplot as plt
 import mir_eval
 import numpy as np
@@ -14,7 +15,7 @@ from mpl_toolkits.axes_grid1 import make_axes_locatable
 from hparams import hparams
 
 
-def main(test_epoch: int, song_ids: List[int]):
+def main(test_epoch: int, ids_drawn: Set[int], tol: float):
     # test_eval: precision, recall, fscore
     path_test = Path(hparams.logdir, f'test_{test_epoch}')
     if not path_test.exists():
@@ -22,34 +23,36 @@ def main(test_epoch: int, song_ids: List[int]):
     path_metadata = hparams.path_dataset['test'] / 'metadata/metadata.csv'
 
     # Take the genres of each song in id order
+    ids = []
+    id_genre = []  # k: id, v: genre
+    i_col_genre = 3
     with path_metadata.open('r', encoding='utf-8') as f:
         read = csv.reader(f)
-        id_genre = dict()  # k: id, v: genre
-        i_col_genre = 3
         for idx, line in enumerate(read):
             if idx == 0:
                 i_col_genre = line.index('GENRE')
                 continue
             id_ = line[0]
             if (path_test / f'{id_}_pred.npy').exists():
-                id_genre[id_] = line[i_col_genre]
+                ids.append(int(id_))
+                id_genre.append(line[i_col_genre])
 
     # measure
-    test_result = dict()  # k: id, v: float(precision, recall, F1, F0.58)
-    for id_ in id_genre.keys():
+    all_results = []  # k: id, v: float(precision, recall, F1, F0.58)
+    for i_id, id_ in enumerate(ids):
         item_truth = np.load(path_test / f'{id_}_truth.npy')
         item_pred = np.load(path_test / f'{id_}_pred.npy')
-        prec, recall, f1 = mir_eval.segment.detection(item_truth, item_pred, trim=True)
-        _, _, f058 = mir_eval.segment.detection(item_truth, item_pred, beta=0.58, trim=True)
-        test_result[id_] = (prec, recall, f1, f058)
+        prec, recall, f1 = mir_eval.segment.detection(item_truth, item_pred, trim=True, window=tol)
+        _, _, f058 = mir_eval.segment.detection(item_truth, item_pred, beta=0.58, trim=True, window=tol)
+        all_results.append(np.array((prec, recall, f1, f058)))
 
     # total mean / min / max
-    total = list(test_result.values())  # length N list of length 4 tuple
-    total_mean = np.mean(total, axis=0)  # (4,)
-    total_min = np.min(total, axis=0)  # (4,)
-    total_max = np.max(total, axis=0)  # (4,)
-    song_ids.append(np.argmin(total, axis=0)[2])
-    song_ids.append(np.argmax(total, axis=0)[2])
+    all_results = np.stack(all_results, axis=0)  # (N, 4)
+    total_mean = np.mean(all_results, axis=0)  # (4,)
+    total_min = np.min(all_results, axis=0)  # (4,)
+    total_max = np.max(all_results, axis=0)  # (4,)
+    ids_drawn.add(int(ids[np.argmin(all_results, axis=0)[2]]))
+    ids_drawn.add(int(ids[np.argmax(all_results, axis=0)[2]]))
     total_min_err = total_mean - total_min
     total_max_err = total_max - total_mean
     total_errs = np.stack((total_min_err, total_max_err), axis=0)  # 2, 4
@@ -57,16 +60,16 @@ def main(test_epoch: int, song_ids: List[int]):
 
     # mean / min / max per genres
     genre_result = defaultdict(list)  # k: genre, v: list
-    for id_, g in id_genre.items():
-        genre_result[g].append(test_result[id_])
+    for i_id, g in enumerate(id_genre):
+        genre_result[g].append(all_results[i_id])
 
-    all_genre = list(genre_result.keys())
+    all_genres = list(genre_result.keys())
     num_genres = len(genre_result)
     xs = np.arange(num_genres + 1)
     genre_mean = np.zeros((num_genres, 4))
     genre_max = np.zeros((num_genres, 4))
     genre_min = np.zeros((num_genres, 4))
-    for idx, g in enumerate(all_genre):
+    for idx, g in enumerate(all_genres):
         genre_mean[idx] = np.mean(genre_result[g], axis=0)
         genre_max[idx] = np.max(genre_result[g], axis=0)
         genre_min[idx] = np.min(genre_result[g], axis=0)
@@ -90,8 +93,10 @@ def main(test_epoch: int, song_ids: List[int]):
     ax.text(xs[-1] + 0.1, total_mean[2], f'{total_mean[2]:.3f}')
 
     ax.set_xticks(xs)
-    ax.set_xticklabels([*all_genre, 'Total'], rotation='vertical')
-    ax.set_xlim(xs[0] - 0.8, xs[-1] + 0.8)
+    ax.set_xticklabels([*all_genres, 'Total'], rotation='vertical')
+    ax.set_xlim(xs[0] - 0.7, xs[-1] + 0.9)
+    # ax.set_ylim(0, ax.get_ylim()[1])
+    ax.set_ylim(0, 1)
 
     ax.set_ylabel('F1 Score')
     ax.grid(True, axis='y')
@@ -108,15 +113,16 @@ def main(test_epoch: int, song_ids: List[int]):
                            ('mean', 'min', 'max'))),
              ]
         )
-        for idx, g in enumerate(all_genre):
+        for idx, g in enumerate(all_genres):
             writer.writerow([g, *genre_stacked[:, idx, :].flatten().tolist()])
 
         writer.writerow(['TOTAL', *total_stacked.flatten().tolist()])
 
     # Draw mel-spectrogram and boundary detection result
-    for id_ in song_ids:
+    for id_ in ids_drawn:
+        id_ = str(id_)
         try:
-            threshold = np.load(path_test / 'thresholds.npy')[id_]
+            threshold = np.load(path_test / 'thresholds.npz')[id_]
         except IOError:
             threshold = 0.5
         audio, _ = librosa.core.load(
@@ -159,6 +165,8 @@ def main(test_epoch: int, song_ids: List[int]):
         fig.colorbar(ax1.collections[0], format='%+2.0f dB', cax=ax_cbar)
 
         ax1.set_title('mel spectrogram')
+        ax1.xaxis.set_major_locator(tckr.MultipleLocator(30))
+        ax1.xaxis.set_minor_locator(tckr.MultipleLocator(10))
         ax1.set_xlabel('time (min:sec)')
 
         # ax2
@@ -174,9 +182,10 @@ def main(test_epoch: int, song_ids: List[int]):
                    colors=c_vline_truth, label='true boundary', zorder=2)
         ax2.legend(loc='lower center', bbox_to_anchor=(0.5, 1.05), ncol=3)
 
-        ax2.set_xlim(0, t_axis[-1])
+        ax2.set_xlim(ax1.get_xlim())
         ax2.xaxis.set_major_formatter(ax1.xaxis.get_major_formatter())
         ax2.xaxis.set_major_locator(ax1.xaxis.get_major_locator())
+        ax2.xaxis.set_minor_locator(ax1.xaxis.get_minor_locator())
         ax2.set_xlabel('time (min:sec)')
 
         ax2.set_ylim(*ylim)
@@ -194,9 +203,11 @@ def main(test_epoch: int, song_ids: List[int]):
 if __name__ == '__main__':
     parser = ArgumentParser()
     parser.add_argument('epoch', type=int)
-    parser.add_argument('--song', type=int, default=-1)
+    parser.add_argument('--song', default='set()')
+    parser.add_argument('--tol', default=0.5)
 
     args = hparams.parse_argument(parser, print_argument=False)
     plt.rc('font', family='Arial', size=12)
-    songs = [args.song] if args.song > -1 else []
-    main(args.epoch, songs)
+    s_songs = eval(args.song)
+    assert isinstance(s_songs, set)
+    main(args.epoch, s_songs, args.tol)
