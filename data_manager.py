@@ -19,6 +19,11 @@ from utils import DataPerDevice
 
 
 class Normalization:
+    """
+    Calculating and saving mean/std of all mel spectrogram with respect to time axis,
+    applying normalization to the spectrogram
+    """
+
     @staticmethod
     def _sum(a: ndarray) -> ndarray:
         return a.sum(axis=-1, keepdims=True)
@@ -110,29 +115,20 @@ class Normalization:
     def save(self, fname: Path):
         np.savez(fname, mean=self.mean.data[ndarray], std=self.std.data[ndarray])
 
-    # normalize and denormalize functions can accept a ndarray or a tensor.
+    # normalize functions can accept a ndarray or a tensor.
     def normalize(self, a):
         return (a - self.mean.get_like(a)) / self.std.get_like(a)
 
-    def normalize_(self, a):
+    def normalize_(self, a):  # in-place version
         a -= self.mean.get_like(a)
         a /= self.std.get_like(a)
-
-        return a
-
-    def denormalize(self, a):
-        return a * self.std.get_like(a) + self.mean.get_like(a)
-
-    def denormalize_(self, a):
-        a *= self.std.get_like(a)
-        a += self.mean.get_like(a)
 
         return a
 
 
 class SALAMIDataset(Dataset):
     def __init__(self, kind_data: str, hparams,
-                 multi_annot: bool = False, need_class_weight = True, normalization=None):
+                 multi_annot: bool = False, need_class_weight=True, normalization=None):
         self._PATH: Path = hparams.path_feature[kind_data]
         self.multi_annot = multi_annot
 
@@ -140,7 +136,6 @@ class SALAMIDataset(Dataset):
             f for f in self._PATH.glob('*.npy') if not hparams.is_banned(f)
         ]
         self.all_files = sorted(self.all_files)
-        # self.all_files = list(np.random.permutation(self.all_files).tolist())
 
         all_ys = dict(**np.load(
             self._PATH / f'boundary_scores_{hparams.len_gaussian_kernel}.npz'
@@ -155,6 +150,7 @@ class SALAMIDataset(Dataset):
         )
 
         if kind_data == 'train':
+            # load normalization constants if saved, calculate them if not
             f_normconst = self._PATH / 'normconst.npz'
             if f_normconst.exists() and not hparams.refresh_normconst:
                 self.normalization = Normalization(**np.load(f_normconst))
@@ -203,6 +199,8 @@ class SALAMIDataset(Dataset):
         s_song_id = f.stem.split('_')[0]
 
         x = torch.tensor(np.load(f), dtype=torch.float32)
+
+        # randomly select one annotation if multi_annot
         y = self.all_ys[s_song_id]
         intervals = self.all_intervals[s_song_id]
         if self.multi_annot and y.shape[0] == 2:
@@ -212,6 +210,7 @@ class SALAMIDataset(Dataset):
         else:
             y = y[0]
             intervals = intervals[0]
+
         T = x.shape[2]
         song_id = int(s_song_id)
 
@@ -291,16 +290,18 @@ def get_dataloader(hparams, only_test=False):
                          collate_fn=SALAMIDataset.pad_collate)
     if only_test:
         salami = SALAMIDataset('train', hparams, hparams.train_multi_annot,
-                               need_class_weight=False)
+                               need_class_weight=False)  # load normalization consts
         train_loader = None
         valid_loader = None
     else:
+        # create train / valid loaders
         salami = SALAMIDataset('train', hparams, hparams.train_multi_annot)
         train_set, valid_set = SALAMIDataset.split(salami, (hparams.train_ratio, -1))
         valid_set.multi_annot = False
         train_loader = DataLoader(train_set, shuffle=True, **loader_kwargs)
         valid_loader = DataLoader(valid_set, shuffle=False, **loader_kwargs)
 
+    # test loader
     test_set = SALAMIDataset('test', hparams,
                              multi_annot=False,
                              normalization=salami.normalization,

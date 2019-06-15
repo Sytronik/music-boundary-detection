@@ -16,17 +16,21 @@ python feature_extraction.py KIND_DATA [--mode=MODE] [--num-workers=N]
 - `N` can be an integer from `1` to `cpu_count()`.
   Default is `cpu_count() - 1`.
 
+## Creation of Test set
+By `match_salami_file_struct.py`, mp3 audio files and annotation text files are saved as SALAMI files.
+
 ## DNN Training and Testing
 
 ```shell
-python train_test.py [--test=EPOCH] [--(hyperparameter name)=(python script)]
+python train_test.py [--test=EPOCH] [--(hyperparameter name)=(python script or str)]
 ```
 
 ## Test Result Analysis
 
 ```shell
-python analyze_test.py EPOCH [--song=ID]
+python analyze_test.py EPOCH [--song={ID1, ID2, ...}]
 ```
+- `ID1`,`ID2`,... are song ids to be plotted in forms of mel and boundary.
 
 ## Requirements
 

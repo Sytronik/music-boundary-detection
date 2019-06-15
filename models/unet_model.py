@@ -1,5 +1,3 @@
-# full assembly of the sub-parts to form the complete net
-
 from torch import nn, Tensor
 
 from .unet_parts import DownAndConv, InConv, OutConv, UpAndConv
@@ -7,6 +5,15 @@ from .unet_parts import DownAndConv, InConv, OutConv, UpAndConv
 
 class UNet(nn.Module):
     def __init__(self, ch_in, ch_out, ch_base=8, depth=4, kernel_size=(3, 3), stride=(1, 1)):
+        """
+
+        :param ch_in:
+        :param ch_out:
+        :param ch_base: channels in encoding path: ch_base -> ch_base * 2 -> ch_base * 4 -> ...
+        :param depth: no. of down blocks (the same as no. of up blocks)
+        :param kernel_size:
+        :param stride:
+        """
         super().__init__()
         self.inc = InConv(ch_in, ch_base,
                           kernel_size=kernel_size,

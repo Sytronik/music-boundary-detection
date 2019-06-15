@@ -2,7 +2,7 @@ import os
 import shutil
 from argparse import ArgumentParser
 from pathlib import Path
-from typing import List, Tuple, Optional
+from typing import List, Optional, Tuple, Union
 
 import mir_eval
 import numpy as np
@@ -34,7 +34,7 @@ class Runner(object):
         self.frame2time = hparams.hop_size / hparams.sample_rate
         self.T_6s = round(6 / self.frame2time) - 1
         self.T_12s = round(12 / self.frame2time) - 1
-        self.metrics = ('precision', 'recall', 'F1', 'mean', 'std')
+        self.metrics = ('precision', 'recall', 'F1')
 
         # optimizer and scheduler
         self.optimizer = AdamW(self.model.parameters(),
@@ -113,16 +113,23 @@ class Runner(object):
         torch.cuda.set_device(device[0])
         return 'cuda'
 
-    def calc_loss(self, y: Tensor, out: Tensor, Ts: List[int]):
+    def calc_loss(self, y: Tensor, out: Tensor, Ts: Union[List[int], int]) -> Tensor:
+        """
+
+        :param y: (B, T) or (T,)
+        :param out: (B, T) or (T,)
+        :param Ts: length B list or int
+        :return:
+        """
         assert self.class_weight is not None
         weight = (y > 0).float() * self.class_weight[1].item()
         weight += (y == 0).float() * self.class_weight[0].item()
 
-        if y.dim() == 1:
-            y = [y]
-            out = [out]
-            weight = [weight]
-            Ts = [Ts]
+        if y.dim() == 1:  # if batch_size == 1
+            y = (y,)
+            out = (out,)
+            weight = (weight,)
+            Ts = (Ts,)
 
         loss = torch.zeros(1, device=self.out_device)
         for ii, T in enumerate(Ts):
@@ -131,27 +138,28 @@ class Runner(object):
 
         return loss
 
-    def predict(self, out_np: ndarray, Ts: List[int]) -> Tuple[List[ndarray], List]:
+    def predict(self, out_np: ndarray, Ts: Union[List[int], int]) \
+            -> Tuple[List[ndarray], List]:
         """ peak-picking prediction
 
         :param out_np: (B, T) or (T,)
-        :param Ts: length B list
-        :return: length B list of boundary index ndarrays
+        :param Ts: length B list or int
+        :return: boundaries, thresholds
+            boundaries: length B list of boundary interval ndarrays
+            thresholds: length B list of threshold values
         """
-        if out_np.ndim == 1:
+        if out_np.ndim == 1:  # if batch_size == 1
             out_np = (out_np,)
             Ts = (Ts,)
 
         boundaries = []
         thresholds = []
         for item, T in zip(out_np, Ts):
-            # candid_val = []
             candid_idx = []
             for idx in range(1, T - 1):
                 i_first = max(idx - self.T_6s, 0)
                 i_last = min(idx + self.T_6s + 1, T)
                 if item[idx] >= np.amax(item[i_first:i_last]):
-                    # candid_val.append(item[i])
                     candid_idx.append(idx)
 
             boundary_idx = []
@@ -170,15 +178,21 @@ class Runner(object):
         return boundaries, thresholds
 
     @staticmethod
-    def evaluate(reference: List[ndarray], prediction: List[ndarray], out_np: ndarray):
-        if out_np.ndim == 1:
-            reference = (reference,)
-            out_np = (out_np,)
+    def evaluate(reference: Union[List[ndarray], ndarray],
+                 prediction: Union[List[ndarray], ndarray]):
+        """
 
-        result = np.zeros(5)
-        for item_truth, item_pred, item_out in zip(reference, prediction, out_np):
+        :param reference: length B list of ndarray or just ndarray
+        :param prediction: length B list of ndarray or just ndarray
+        :return: (3,) ndarray
+        """
+        if isinstance(reference, ndarray):  # if batch_size == 1
+            reference = (reference,)
+
+        result = np.zeros(3)
+        for item_truth, item_pred in zip(reference, prediction):
             mir_result = mir_eval.segment.detection(item_truth, item_pred, trim=True)
-            result += np.array([*mir_result, item_out.mean(), item_out.std()])
+            result += np.array(mir_result)
 
         return result
 
@@ -187,9 +201,9 @@ class Runner(object):
         self.model.train() if mode == 'train' else self.model.eval()
         if mode == 'test':
             state_dict = torch.load(Path(self.writer.logdir, f'{epoch}.pt'))
-            try:
+            if isinstance(self.model, nn.DataParallel):
                 self.model.module.load_state_dict(state_dict)
-            except RuntimeError:
+            else:
                 self.model.load_state_dict(state_dict)
             path_test_result = Path(self.writer.logdir, f'test_{epoch}')
             os.makedirs(path_test_result, exist_ok=True)
@@ -227,7 +241,7 @@ class Runner(object):
             out_np = self.sigmoid(out).detach().cpu().numpy()
             prediction, thresholds = self.predict(out_np, Ts)
 
-            eval_result = self.evaluate(intervals, prediction, out_np)
+            eval_result = self.evaluate(intervals, prediction)
 
             if mode == 'train':
                 # backward
@@ -237,9 +251,8 @@ class Runner(object):
                 self.scheduler.batch_step()
                 loss = loss.item()
             elif mode == 'valid':
-                # record
                 loss = loss.item()
-                if i_batch == 0:
+                if i_batch == 0:  # save only the 0-th data
                     id_0, T_0 = ids[0], Ts[0]
                     out_np_0 = out_np[0, :T_0]
                     pred_0, truth_0 = prediction[0][1:, 0], intervals[0][1:, 0]
@@ -251,6 +264,7 @@ class Runner(object):
                     if epoch == 0:
                         np.save(Path(self.writer.logdir, f'{id_0}_truth.npy'), truth_0)
             else:
+                # save all test data
                 for id_, item_truth, item_pred, item_out, threshold, T \
                         in zip(ids, intervals, prediction, out_np, thresholds, Ts):
                     np.save(path_test_result / f'{id_}_truth.npy', item_truth)
@@ -272,8 +286,13 @@ class Runner(object):
 
         return avg_loss, avg_eval
 
-    # Early stopping function for given validation loss
-    def step(self, valid_f1, epoch):
+    def step(self, valid_f1: float, epoch: int):
+        """
+
+        :param valid_f1:
+        :param epoch:
+        :return: test epoch or 0
+        """
         last_restart = self.scheduler.last_restart
         self.scheduler.step()  # scheduler.last_restart can be updated
 
@@ -294,39 +313,39 @@ def main(test_epoch: int):
         runner = Runner(hparams,
                         len(train_loader.dataset),
                         train_loader.dataset.class_weight)
-        dict_custom_scalars = dict(
-            loss=['Multiline', ['loss/train', 'loss/valid']],
-        )
+        dict_custom_scalars = dict(loss=['Multiline', ['loss/train', 'loss/valid']])
         for name in runner.metrics:
             dict_custom_scalars[name] = ['Multiline', [f'{name}/train', f'{name}/valid']]
         runner.writer.add_custom_scalars(dict(training=dict_custom_scalars))
 
         epoch = 0
-        stopped_epoch_or_zero = 0
+        test_epoch_or_zero = 0
         print(f'Training on {runner.str_device}')
         for epoch in range(hparams.num_epochs):
-            # runner.writer.add_scalar('lr', runner.optimizer.param_groups[0]['lr'], epoch)
-
+            # training
             train_loss, train_eval = runner.run(train_loader, 'train', epoch)
             runner.writer.add_scalar('loss/train', train_loss, epoch)
             for idx, name in enumerate(runner.metrics):
                 runner.writer.add_scalar(f'{name}/train', train_eval[idx], epoch)
 
+            # validation
             valid_loss, valid_eval = runner.run(valid_loader, 'valid', epoch)
             runner.writer.add_scalar('loss/valid', valid_loss, epoch)
             for idx, name in enumerate(runner.metrics):
                 runner.writer.add_scalar(f'{name}/valid', valid_eval[idx], epoch)
 
-            stopped_epoch_or_zero = runner.step(valid_eval[2], epoch)
-            if stopped_epoch_or_zero > 0:
+            # check stopping criterion
+            test_epoch_or_zero = runner.step(valid_eval[2], epoch)
+            if test_epoch_or_zero > 0:
                 break
 
         torch.save(runner.model.module.state_dict(), Path(runner.writer.logdir, f'{epoch}.pt'))
         print('Training Finished')
-        test_epoch = stopped_epoch_or_zero if stopped_epoch_or_zero > 0 else epoch
+        test_epoch = test_epoch_or_zero if test_epoch_or_zero > 0 else epoch
     else:
         runner = Runner(hparams, len(test_loader.dataset))
 
+    # test
     _, test_eval = runner.run(test_loader, 'test', test_epoch)
 
     str_eval = np.array2string(test_eval, precision=4)
@@ -343,6 +362,7 @@ if __name__ == '__main__':
     args = hparams.parse_argument(parser)
     test_epoch = args.test
     if test_epoch == -1:
+        # check overwrite or not
         if list(Path(hparams.logdir).glob('events.out.tfevents.*')):
             while True:
                 s = input(f'"{hparams.logdir}" already has tfevents. continue? (y/n)\n')

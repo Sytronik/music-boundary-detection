@@ -1,7 +1,7 @@
 import contextlib
 import os
 from pathlib import Path
-from typing import Callable, List, Union
+from typing import Callable, Union
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -20,9 +20,12 @@ def draw_lineplot(t_axis: ndarray, score: ndarray, prediction: ndarray, truth: n
     ax.vlines(x=truth, ymin=0, ymax=0.3, colors='y', label='truth', zorder=2)
 
     ax.set_title(str(song_id))
+
     ax.legend(loc='upper right')
+
     ax.set_yticks([0, 0.5, 1])
     ax.grid(True, axis='y')
+
     ax.set_xlabel('time (sec)')
     ax.set_ylabel('boundary score')
 
@@ -69,6 +72,10 @@ def convert(a: Union[Tensor, ndarray], astype: type, device=None):
 
 
 class DataPerDevice:
+    """
+    Converting ndarray to tensors of cpu or cuda devices when it is firstly needed,
+    and keep the tensors for the next usage.
+    """
     __slots__ = ('data',)
 
     def __init__(self, data_np: ndarray):

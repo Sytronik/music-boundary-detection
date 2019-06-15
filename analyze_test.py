@@ -48,13 +48,14 @@ def draw_mel_boundary(path_audio: Path, path_figure: Path,
     c_vline_pred = 'C2'
     c_vline_truth = 'C9'
 
-    # ax1
+    # ax1: mel spectrogram
     librosa.display.specshow(librosa.power_to_db(mel_S, ref=np.max),
                              x_axis='time', y_axis='mel',
                              sr=hparams.sample_rate,
                              hop_length=hparams.hop_size,
                              ax=ax1,
                              )
+    # prediction and target boundary
     ax1.vlines(x=prediction,
                ymin=4000, ymax=16000,
                colors=c_vline_pred, label='prediction', zorder=2)
@@ -70,11 +71,12 @@ def draw_mel_boundary(path_audio: Path, path_figure: Path,
     ax1.xaxis.set_minor_locator(tckr.MultipleLocator(10))
     ax1.set_xlabel('time (min:sec)')
 
-    # ax2
-    ylim = [-0.3, 1.3]
+    # ax2: boundary score
     ax2.plot(t_axis, score_out,
              color='C1', zorder=1, label='estimated boundary score',
              linewidth=0.75)
+    # prediction and target boundary
+    ylim = [-0.3, 1.3]
     ax2.vlines(x=prediction,
                ymin=0.9, ymax=ylim[1],
                colors=c_vline_pred, label='predicted boundary', zorder=2)
@@ -111,6 +113,13 @@ def draw_mel_boundary(path_audio: Path, path_figure: Path,
 
 
 def main(test_epoch: int, ids_drawn: Set[int], tol: float):
+    """
+
+    :param test_epoch:
+    :param ids_drawn: song ids to be plotted in mel and boundary.
+    :param tol: hit rate tolerance
+    :return:
+    """
     # test_eval: precision, recall, fscore
     path_test = Path(hparams.logdir, f'test_{test_epoch}')
     if not path_test.exists():

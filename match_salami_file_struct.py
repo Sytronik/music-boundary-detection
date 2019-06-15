@@ -1,3 +1,8 @@
+"""
+This script suppose there are song_name.mp3 and song_name.txt in 'path/original' folder.
+This converts that file structure to the same structure as SALAMI.
+
+"""
 import os
 import shutil
 import csv

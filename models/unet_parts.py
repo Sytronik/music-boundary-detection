@@ -44,6 +44,9 @@ class ConvBNAct(nn.Module):
 
 
 class InConv(nn.Module):
+    """ Double Convolution Blocks
+
+    """
     def __init__(self, in_ch: int, out_ch: int, kernel_size=(3, 3)):
         super().__init__()
         padding = (kernel_size[0] // 2, kernel_size[1] // 2)
@@ -58,6 +61,9 @@ class InConv(nn.Module):
 
 
 class DownAndConv(nn.Module):
+    """ Max Pooling and Double Convolution Blocks
+
+    """
     def __init__(self, in_ch: int, out_ch: int, kernel_size=(3, 3), stride=(1, 1)):
         super().__init__()
         padding = (kernel_size[0] // 2, kernel_size[1] // 2)
@@ -75,6 +81,9 @@ class DownAndConv(nn.Module):
 
 
 class UpAndConv(nn.Module):
+    """ Transposed Convolution and Double Convolution Blocks
+
+    """
     def __init__(self, in_ch: int, out_ch: int, bilinear=False, kernel_size=(3, 3), upsample=(2, 2)):
         super().__init__()
         padding = (kernel_size[0] // 2, kernel_size[1] // 2)
@@ -98,6 +107,9 @@ class UpAndConv(nn.Module):
 
 
 class OutConv(nn.Module):
+    """ For summarizing channels and mel frequency axis.
+
+    """
     def __init__(self, in_ch: int, out_ch: int):
         super().__init__()
         self.conv1 = nn.Conv2d(in_ch, out_ch, (1, 5), padding=(0, 2))

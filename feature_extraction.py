@@ -108,6 +108,8 @@ def arrange_boundary_info(song_id: int, path_annot: Path, num_frame):
             s = l_sect[1]
             if s.lower() == 'end':
                 continue
+
+            # prevent labelling the first or the last frame as boundary.
             if t <= t_frames[1] / 2:
                 continue
             if t > (t_frames[-1] + t_frames[-2]) / 2:
@@ -189,8 +191,7 @@ def extract_or_arrange(song_id, path_audio, paths_annot):
 
         boundary_score = np.array(boundary_score)
         boundary_interval = np.array(boundary_interval)
-        if song_id == 14:
-            print(boundary_interval)
+
         return boundary_score, boundary_interval
     else:
         return None
