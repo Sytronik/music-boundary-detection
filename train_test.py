@@ -27,7 +27,7 @@ class Runner(object):
         # model, criterion, and prediction
         self.model = UNet(ch_in=2, ch_out=1, **hparams.model)
         self.sigmoid = torch.nn.Sigmoid()
-        self.criterion = torch.nn.BCELoss(reduction='none')
+        self.criterion = torch.nn.BCEWithLogitsLoss(reduction='none')
         self.class_weight = class_weight
 
         # for prediction
@@ -211,15 +211,20 @@ class Runner(object):
 
             # forward
             out = self.model(x)  # B, C, 1, T
-            out = self.sigmoid(out)[..., 0, 0, :]  # B, T
+            out = out[..., 0, 0, :]  # B, T
 
             # loss
             if mode != 'test':
-                loss = self.calc_loss(y, out, Ts)
+                if mode == 'valid':
+                    with torch.autograd.detect_anomaly():
+                        loss = self.calc_loss(y, out, Ts)
+                else:
+                    loss = self.calc_loss(y, out, Ts)
+
             else:
                 loss = 0
 
-            out_np = out.detach().cpu().numpy()
+            out_np = self.sigmoid(out).detach().cpu().numpy()
             prediction, thresholds = self.predict(out_np, Ts)
 
             eval_result = self.evaluate(intervals, prediction, out_np)

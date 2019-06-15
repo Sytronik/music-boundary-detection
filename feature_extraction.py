@@ -154,6 +154,7 @@ def arrange_boundary_info(song_id: int, path_annot: Path, num_frame):
         i_k_first = max(+half_len_kernel - i_boundary, 0)
         i_k_last = half_len_kernel + min(half_len_kernel + 1, len(boundary_score) - i_boundary)
         boundary_score[i_first:i_last] += kernel[i_k_first:i_k_last]
+    boundary_score = np.clip(boundary_score, 0., 1.)
 
     # boundary interval
     boundary_interval = np.array([[0, *t_boundaries], [*t_boundaries, t_frames[-1]]]).T
@@ -188,6 +189,8 @@ def extract_or_arrange(song_id, path_audio, paths_annot):
 
         boundary_score = np.array(boundary_score)
         boundary_interval = np.array(boundary_interval)
+        if song_id == 14:
+            print(boundary_interval)
         return boundary_score, boundary_interval
     else:
         return None
@@ -215,8 +218,8 @@ def main():
 
             # path of annotations
             paths_annot = [None, None]
-            paths_annot[0] = path_annot_dir / f'{song_id}/parsed/textfile1_uppercase.txt'
-            paths_annot[1] = path_annot_dir / f'{song_id}/parsed/textfile2_uppercase.txt'
+            paths_annot[0] = path_annot_dir / f'{song_id}/parsed/textfile1_{kind_annot}.txt'
+            paths_annot[1] = path_annot_dir / f'{song_id}/parsed/textfile2_{kind_annot}.txt'
             paths_annot = [p for p in paths_annot if p.exists()]
 
             # exceptions
@@ -286,6 +289,7 @@ if __name__ == '__main__':
     sample_rate = hparams.sample_rate
     sample_period = 1 / sample_rate
 
+    kind_annot = hparams.kind_annotation
     len_kernel = hparams.len_gaussian_kernel
     sigma = len_kernel / 4
     half_len_kernel = len_kernel // 2
