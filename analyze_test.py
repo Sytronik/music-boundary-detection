@@ -3,16 +3,111 @@ from argparse import ArgumentParser
 from collections import defaultdict
 from itertools import product
 from pathlib import Path
-from typing import Set
+from typing import Set, Optional, Sequence
 
 import librosa.display
 import matplotlib.ticker as tckr
 import matplotlib.pyplot as plt
 import mir_eval
 import numpy as np
+from numpy import ndarray
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 
 from hparams import hparams
+
+
+def draw_mel_boundary(path_audio: Path, path_figure: Path,
+                      score_out: ndarray, prediction: ndarray, truth: ndarray,
+                      threshold: float,
+                      draw_title=False,
+                      draw_legend=True,
+                      xlim: Optional[Sequence[float]] = None,
+                      xticklabels: Optional[Sequence[float]] = None,
+                      ):
+    audio, _ = librosa.core.load(str(path_audio), sr=hparams.sample_rate)
+    mel_S = librosa.feature.melspectrogram(audio,
+                                           sr=hparams.sample_rate,
+                                           n_fft=hparams.fft_size,
+                                           hop_length=hparams.hop_size,
+                                           n_mels=hparams.num_mels)
+
+    t_axis = np.arange(len(score_out)) * hparams.hop_size / hparams.sample_rate
+    # figure
+    if xlim is not None:
+        duration = xlim[1] - xlim[0]
+        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(duration / 20 + 1.5, 5))
+        # ax for colorbar
+        ax_cbar = None
+    else:
+        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 5))
+        # ax for colorbar
+        ax_cbar = make_axes_locatable(ax1).append_axes('right', size=0.1, pad=0.05)
+        ax_none = make_axes_locatable(ax2).append_axes('right', size=0.1, pad=0.05)
+        ax_none.set_visible(False)
+
+    c_vline_pred = 'C2'
+    c_vline_truth = 'C9'
+
+    # ax1
+    librosa.display.specshow(librosa.power_to_db(mel_S, ref=np.max),
+                             x_axis='time', y_axis='mel',
+                             sr=hparams.sample_rate,
+                             hop_length=hparams.hop_size,
+                             ax=ax1,
+                             )
+    ax1.vlines(x=prediction,
+               ymin=4000, ymax=16000,
+               colors=c_vline_pred, label='prediction', zorder=2)
+    ax1.vlines(x=truth,
+               ymin=0, ymax=600,
+               colors=c_vline_truth, label='truth', zorder=2)
+    if ax_cbar:
+        fig.colorbar(ax1.collections[0], format='%+2.0f dB', cax=ax_cbar)
+    if draw_title:
+        ax1.set_title('mel spectrogram')
+    x_formatter = ax1.xaxis.get_major_formatter()
+    ax1.xaxis.set_major_locator(tckr.MultipleLocator(30))
+    ax1.xaxis.set_minor_locator(tckr.MultipleLocator(10))
+    ax1.set_xlabel('time (min:sec)')
+
+    # ax2
+    ylim = [-0.3, 1.3]
+    ax2.plot(t_axis, score_out,
+             color='C1', zorder=1, label='estimated boundary score',
+             linewidth=0.75)
+    ax2.vlines(x=prediction,
+               ymin=0.9, ymax=ylim[1],
+               colors=c_vline_pred, label='predicted boundary', zorder=2)
+    ax2.vlines(x=truth,
+               ymin=ylim[0], ymax=0.1,
+               colors=c_vline_truth, label='target boundary', zorder=2)
+    if draw_legend:
+        ax2.legend(loc='lower center', bbox_to_anchor=(0.5, 1.05), ncol=3)
+
+    ax2.set_xlim(ax1.get_xlim())
+    ax2.xaxis.set_major_formatter(x_formatter)
+    ax2.xaxis.set_major_locator(ax1.xaxis.get_major_locator())
+    ax2.xaxis.set_minor_locator(ax1.xaxis.get_minor_locator())
+    ax2.set_xlabel('time (min:sec)')
+
+    ax2.set_ylim(*ylim)
+    ax2.set_yticks([0, 1])
+    ax2.set_yticks([threshold], minor=True)
+    ax2.set_yticklabels(['threshold'], minor=True)
+
+    ax2.grid(True, which='major', axis='y')
+    ax2.grid(True, which='minor', axis='y', linestyle='--', linewidth=1)
+
+    if xlim is not None:
+        ax1.set_xlim(*xlim)
+        ax2.set_xlim(*xlim)
+        ax1.set_xticks(xlim)
+        ax2.set_xticks(xlim)
+        ax1.set_xticklabels(xticklabels)
+        ax2.set_xticklabels(xticklabels)
+
+    fig.tight_layout()
+    fig.savefig(path_figure, dpi=600)
 
 
 def main(test_epoch: int, ids_drawn: Set[int], tol: float):
@@ -43,7 +138,8 @@ def main(test_epoch: int, ids_drawn: Set[int], tol: float):
         item_truth = np.load(path_test / f'{id_}_truth.npy')
         item_pred = np.load(path_test / f'{id_}_pred.npy')
         prec, recall, f1 = mir_eval.segment.detection(item_truth, item_pred, trim=True, window=tol)
-        _, _, f058 = mir_eval.segment.detection(item_truth, item_pred, beta=0.58, trim=True, window=tol)
+        _, _, f058 = mir_eval.segment.detection(item_truth, item_pred, beta=0.58, trim=True,
+                                                window=tol)
         all_results.append(np.array((prec, recall, f1, f058)))
 
     # total mean / min / max
@@ -119,85 +215,24 @@ def main(test_epoch: int, ids_drawn: Set[int], tol: float):
         writer.writerow(['TOTAL', *total_stacked.flatten().tolist()])
 
     # Draw mel-spectrogram and boundary detection result
+    try:
+        thresholds = dict(**np.load(path_test / 'thresholds.npz'))
+    except IOError:
+        thresholds = None
     for id_ in ids_drawn:
-        id_ = str(id_)
-        try:
-            threshold = np.load(path_test / 'thresholds.npz')[id_]
-        except IOError:
-            threshold = 0.5
-        audio, _ = librosa.core.load(
-            hparams.path_dataset['test'] / f'audio/{id_}.mp3',
-            sr=hparams.sample_rate
-        )
-        mel_S = librosa.feature.melspectrogram(audio,
-                                               sr=hparams.sample_rate,
-                                               n_fft=hparams.fft_size,
-                                               hop_length=hparams.hop_size,
-                                               n_mels=hparams.num_mels)
-
-        score_out = np.load(path_test / f'{id_}.npy')[:mel_S.shape[1]]
+        score_out = np.load(path_test / f'{id_}.npy')
         prediction = np.load(path_test / f'{id_}_pred.npy')[:, 0]
         truth = np.load(path_test / f'{id_}_truth.npy')[:, 0]
-        t_axis = np.arange(len(score_out)) * hparams.hop_size / hparams.sample_rate
-
-        # figure
-        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(8, 5))
-        # ax for colorbar
-        ax_cbar = make_axes_locatable(ax1).append_axes('right', size=0.1, pad=0.05)
-        ax_none = make_axes_locatable(ax2).append_axes('right', size=0.1, pad=0.05)
-        ax_none.set_visible(False)
-        c_vline_pred = 'C2'
-        c_vline_truth = 'C9'
-
-        # ax1
-        librosa.display.specshow(librosa.power_to_db(mel_S, ref=np.max),
-                                 x_axis='time', y_axis='mel',
-                                 sr=hparams.sample_rate,
-                                 hop_length=hparams.hop_size,
-                                 ax=ax1,
-                                 )
-        ax1.vlines(x=prediction,
-                   ymin=4000, ymax=16000,
-                   colors=c_vline_pred, label='prediction', zorder=2)
-        ax1.vlines(x=truth,
-                   ymin=0, ymax=600,
-                   colors=c_vline_truth, label='truth', zorder=2)
-        fig.colorbar(ax1.collections[0], format='%+2.0f dB', cax=ax_cbar)
-
-        ax1.set_title('mel spectrogram')
-        ax1.xaxis.set_major_locator(tckr.MultipleLocator(30))
-        ax1.xaxis.set_minor_locator(tckr.MultipleLocator(10))
-        ax1.set_xlabel('time (min:sec)')
-
-        # ax2
-        ylim = [-0.3, 1.3]
-        ax2.plot(t_axis, score_out,
-                 color='C1', zorder=1, label='estimated boundary score',
-                 linewidth=0.75)
-        ax2.vlines(x=prediction,
-                   ymin=0.9, ymax=ylim[1],
-                   colors=c_vline_pred, label='predicted boundary', zorder=2)
-        ax2.vlines(x=truth,
-                   ymin=ylim[0], ymax=0.1,
-                   colors=c_vline_truth, label='true boundary', zorder=2)
-        ax2.legend(loc='lower center', bbox_to_anchor=(0.5, 1.05), ncol=3)
-
-        ax2.set_xlim(ax1.get_xlim())
-        ax2.xaxis.set_major_formatter(ax1.xaxis.get_major_formatter())
-        ax2.xaxis.set_major_locator(ax1.xaxis.get_major_locator())
-        ax2.xaxis.set_minor_locator(ax1.xaxis.get_minor_locator())
-        ax2.set_xlabel('time (min:sec)')
-
-        ax2.set_ylim(*ylim)
-        ax2.set_yticks([0, 1])
-        ax2.set_yticks([threshold], minor=True)
-        ax2.set_yticklabels(['threshold'], minor=True)
-
-        ax2.grid(True, which='major', axis='y')
-        ax2.grid(True, which='minor', axis='y', linestyle='--', linewidth=1)
-
-        fig.tight_layout()
-        fig.savefig(path_test / f'test_boundary_{id_}.png', dpi=600)
+        draw_mel_boundary(hparams.path_dataset['test'] / f'audio/{id_}.mp3',
+                          path_test / f'test_boundary_{id_}.png',
+                          score_out,
+                          prediction,
+                          truth,
+                          thresholds[str(id_)] if thresholds else 0.5,
+                          # draw_legend=False if id_ == 18 else True,
+                          # xlim=(130, 140) if id_ == 18 else None,
+                          # xticklabels=('2:10', '2:20') if id_ == 18 else None,
+                          )
 
 
 if __name__ == '__main__':
