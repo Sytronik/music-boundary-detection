@@ -1,7 +1,7 @@
 import argparse
 from pathlib import Path
 from typing import Any, Dict, List, Sequence, Tuple, Union
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, asdict
 
 
 @dataclass
@@ -21,18 +21,19 @@ class HParams(object):
     hop_size: int = 1024
     num_mels: int = 128
     refresh_normconst: bool = False
+
+    kind_annotation: str = 'uppercase'
     len_gaussian_kernel: int = 31
     train_multi_annot: bool = True
 
     # augmentation
     pitchstep: Tuple[int] = (0, -1, 1)
-    noise_db: Tuple[int] = (None, -24, -30, -36)
-    max_F_rm: Tuple[int] = (0, 9, 15)
+    noise_db: Tuple[int] = (None, -24)
+    max_F_rm: Tuple[int] = (0, 15)
     bans: Dict[str, List[int]] = field(init=False)
-    s_bans: Dict[str, List[str]] = field(init=False)
 
     # summary path
-    logdir: str = './runs/score'
+    logdir: str = './runs/best'
 
     # Model Parameters
     model: Dict[str, Any] = field(init=False)
@@ -58,10 +59,8 @@ class HParams(object):
                                  test=Path('/soundlab-salami-test/feature'))
 
         self.bans = dict(pitchstep=[],
-                         noise_db=[-30, -36],
-                         max_F_rm=[9])
-
-        self.s_bans = {k: [str(item) for item in v] for k, v in self.bans.items()}
+                         noise_db=[],
+                         max_F_rm=[])
 
         self.model = dict(ch_base=8,
                           depth=4,
@@ -75,8 +74,8 @@ class HParams(object):
 
     def is_banned(self, f: Path):
         aug_coeffs = f.stem.split('_')[1:]
-        for coeff, bans in zip(aug_coeffs, self.s_bans.values()):
-            if coeff in bans:
+        for coeff, bans in zip(aug_coeffs, self.bans.values()):
+            if coeff in str(bans):
                 return True
 
         return False
@@ -85,23 +84,28 @@ class HParams(object):
     def parse_argument(self, parser=None, print_argument=True):
         if not parser:
             parser = argparse.ArgumentParser()
-        for var in vars(self):
-            argument = f'--{var}'
-            parser.add_argument(argument, type=str, default='')
+        dict_self = asdict(self)
+        for k in dict_self:
+            parser.add_argument(f'--{k}', default='')
 
         args = parser.parse_args()
-        for var in vars(self):
-            parsed = getattr(args, var)
-            if parsed != '':
-                setattr(hparams, var, eval(parsed))
+        for k in dict_self:
+            parsed = getattr(args, k)
+            if parsed == '':
+                continue
+            if type(dict_self[k]) == str:
+                setattr(self, k, parsed)
+            else:
+                v = eval(parsed)
+                if isinstance(v, type(dict_self[k])):
+                    setattr(self, k, eval(parsed))
 
         if print_argument:
             print('-------------------------')
             print('Hyper Parameter Settings')
             print('-------------------------')
-            for var in vars(self):
-                value = getattr(hparams, var)
-                print(f'{var}: {value}')
+            for k, v in asdict(self).items():
+                print(f'{k}: {v}')
             print('-------------------------')
 
         return args
