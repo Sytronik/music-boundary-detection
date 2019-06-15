@@ -2,7 +2,7 @@ import os
 import shutil
 from argparse import ArgumentParser
 from pathlib import Path
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 
 import mir_eval
 import numpy as np
@@ -23,10 +23,9 @@ from utils import draw_lineplot, print_to_file
 
 # Wrapper class to run PyTorch model
 class Runner(object):
-    def __init__(self, hparams, train_size: int, num_classes: int, class_weight: Tensor):
+    def __init__(self, hparams, train_size: int, class_weight: Optional[Tensor] = None):
         # model, criterion, and prediction
-        ch_out = num_classes if num_classes > 2 else 1
-        self.model = UNet(ch_in=2, ch_out=ch_out, **hparams.model)
+        self.model = UNet(ch_in=2, ch_out=1, **hparams.model)
         self.sigmoid = torch.nn.Sigmoid()
         self.criterion = torch.nn.BCELoss(reduction='none')
         self.class_weight = class_weight
@@ -115,28 +114,37 @@ class Runner(object):
         return 'cuda'
 
     def calc_loss(self, y: Tensor, out: Tensor, Ts: List[int]):
-        loss = torch.zeros(1, device=self.out_device)
+        assert self.class_weight is not None
         weight = (y > 0).float() * self.class_weight[1].item()
         weight += (y == 0).float() * self.class_weight[0].item()
+
+        if y.dim() == 1:
+            y = [y]
+            out = [out]
+            weight = [weight]
+            Ts = [Ts]
+
+        loss = torch.zeros(1, device=self.out_device)
         for ii, T in enumerate(Ts):
             loss_no_red = self.criterion(out[ii:ii + 1, ..., :T], y[ii:ii + 1, :T])
             loss += (loss_no_red * weight[ii:ii + 1, :T]).sum() / T
 
         return loss
 
-    def predict(self, out: ndarray, Ts: List[int]) -> Tuple[List[ndarray], List]:
+    def predict(self, out_np: ndarray, Ts: List[int]) -> Tuple[List[ndarray], List]:
         """ peak-picking prediction
 
-        :param out: (B, T) or (T,)
+        :param out_np: (B, T) or (T,)
         :param Ts: length B list
         :return: length B list of boundary index ndarrays
         """
-        if out.ndim == 1:
-            out = [out]
+        if out_np.ndim == 1:
+            out_np = (out_np,)
+            Ts = (Ts,)
 
         boundaries = []
         thresholds = []
-        for item, T in zip(out, Ts):
+        for item, T in zip(out_np, Ts):
             # candid_val = []
             candid_idx = []
             for idx in range(1, T - 1):
@@ -149,7 +157,7 @@ class Runner(object):
             boundary_idx = []
             threshold = np.mean(item[candid_idx])
             for idx in candid_idx:
-                if item[idx] - threshold > 0:
+                if item[idx] > threshold:
                     boundary_idx.append(idx)
 
             boundary_interval = np.array([[0] + boundary_idx,
@@ -163,6 +171,10 @@ class Runner(object):
 
     @staticmethod
     def evaluate(reference: List[ndarray], prediction: List[ndarray], out_np: ndarray):
+        if out_np.ndim == 1:
+            reference = (reference,)
+            out_np = (out_np,)
+
         result = np.zeros(5)
         for item_truth, item_pred, item_out in zip(reference, prediction, out_np):
             mir_result = mir_eval.segment.detection(item_truth, item_pred, trim=True)
@@ -177,7 +189,7 @@ class Runner(object):
             state_dict = torch.load(Path(self.writer.logdir, f'{epoch}.pt'))
             try:
                 self.model.module.load_state_dict(state_dict)
-            except:
+            except RuntimeError:
                 self.model.load_state_dict(state_dict)
             path_test_result = Path(self.writer.logdir, f'test_{epoch}')
             os.makedirs(path_test_result, exist_ok=True)
@@ -186,14 +198,13 @@ class Runner(object):
 
         avg_loss = 0.
         avg_eval = 0.
-        all_thresholds = []
-        # all_pred = []  # all predictions (for confusion matrix)
+        all_thresholds = dict()
         print()
         pbar = tqdm(dataloader, desc=f'{mode} {epoch:3d}', postfix='-', dynamic_ncols=True)
 
         for i_batch, (x, y, intervals, Ts, ids) in enumerate(pbar):
             # data
-            # y_np = y.int().numpy()
+            n_batch = len(Ts) if hasattr(Ts, 'len') else 1
             x = x.to(self.device)  # B, C, F, T
             x = dataloader.dataset.normalization.normalize_(x)
             y = y.to(self.out_device)  # B, T
@@ -224,28 +235,26 @@ class Runner(object):
                 # record
                 loss = loss.item()
                 if i_batch == 0:
-                    id_0 = ids[0]
-                    T_0 = Ts[0]
+                    id_0, T_0 = ids[0], Ts[0]
                     out_np_0 = out_np[0, :T_0]
+                    pred_0, truth_0 = prediction[0][1:, 0], intervals[0][1:, 0]
                     t_axis = np.arange(T_0) * self.frame2time
-                    pred_0 = prediction[0][1:, 0]
-                    b_idx_0 = intervals[0][1:, 0]
-                    fig = draw_lineplot(t_axis, out_np_0, pred_0, b_idx_0, id_0)
+                    fig = draw_lineplot(t_axis, out_np_0, pred_0, truth_0, id_0)
                     self.writer.add_figure(f'{mode}/out', fig, epoch)
                     np.save(Path(self.writer.logdir, f'{id_0}_{epoch}.npy'), out_np_0)
                     np.save(Path(self.writer.logdir, f'{id_0}_{epoch}_pred.npy'), pred_0)
                     if epoch == 0:
-                        np.save(Path(self.writer.logdir, f'{id_0}_truth.npy'), b_idx_0)
+                        np.save(Path(self.writer.logdir, f'{id_0}_truth.npy'), truth_0)
             else:
-                all_thresholds += thresholds
-                for id_, item_truth, item_pred, item_out, T \
-                        in zip(ids, intervals, prediction, out_np, Ts):
+                for id_, item_truth, item_pred, item_out, threshold, T \
+                        in zip(ids, intervals, prediction, out_np, thresholds, Ts):
                     np.save(path_test_result / f'{id_}_truth.npy', item_truth)
                     np.save(path_test_result / f'{id_}.npy', item_out[:T])
                     np.save(path_test_result / f'{id_}_pred.npy', item_pred)
+                    all_thresholds[str(id_)] = threshold
 
-            str_eval = np.array2string(eval_result, precision=3)
-            pbar.set_postfix_str(f'{loss:.3f}, {str_eval}')
+            str_eval = np.array2string(eval_result / n_batch, precision=3)
+            pbar.set_postfix_str(f'{loss / n_batch:.3f}, {str_eval}')
 
             avg_loss += loss
             avg_eval += eval_result
@@ -254,17 +263,18 @@ class Runner(object):
         avg_eval = avg_eval / len(dataloader.dataset)
 
         if mode == 'test':
-            np.save(path_test_result / f'thresholds.npy', all_thresholds)
+            np.savez(path_test_result / f'thresholds.npz', **all_thresholds)
 
         return avg_loss, avg_eval
 
     # Early stopping function for given validation loss
     def step(self, valid_f1, epoch):
+        last_restart = self.scheduler.last_restart
         self.scheduler.step()  # scheduler.last_restart can be updated
 
         if epoch == self.scheduler.last_restart:
             if valid_f1 < self.f1_last_restart:
-                return self.scheduler.last_restart
+                return last_restart
             else:
                 self.f1_last_restart = valid_f1
                 torch.save(self.model.module.state_dict(),
@@ -275,12 +285,10 @@ class Runner(object):
 
 def main(test_epoch: int):
     train_loader, valid_loader, test_loader = data_manager.get_dataloader(hparams)
-    runner = Runner(hparams,
-                    len(train_loader.dataset),
-                    train_loader.dataset.num_classes,
-                    train_loader.dataset.class_weight)
-
     if test_epoch == -1:
+        runner = Runner(hparams,
+                        len(train_loader.dataset),
+                        train_loader.dataset.class_weight)
         dict_custom_scalars = dict(
             loss=['Multiline', ['loss/train', 'loss/valid']],
         )
@@ -311,6 +319,8 @@ def main(test_epoch: int):
         torch.save(runner.model.module.state_dict(), Path(runner.writer.logdir, f'{epoch}.pt'))
         print('Training Finished')
         test_epoch = stopped_epoch_or_zero if stopped_epoch_or_zero > 0 else epoch
+    else:
+        runner = Runner(hparams, len(test_loader.dataset))
 
     _, test_eval = runner.run(test_loader, 'test', test_epoch)
 

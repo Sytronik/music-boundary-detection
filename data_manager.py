@@ -88,7 +88,7 @@ class Normalization:
             pool_loader.starmap_async(cls._load_data,
                                       [(f, queue_data) for f in all_files])
             result: List[mp.pool.AsyncResult] = []
-            for idx in tqdm(range(len(all_files)), desc='std', dynamic_ncols=True):
+            for _ in tqdm(range(len(all_files)), desc='std', dynamic_ncols=True):
                 data = queue_data.get()
                 result.append(pool_calc.apply_async(
                     cls._calc_per_data,
@@ -131,7 +131,8 @@ class Normalization:
 
 
 class SALAMIDataset(Dataset):
-    def __init__(self, kind_data: str, hparams, multi_annot: bool = False, **kwargs):
+    def __init__(self, kind_data: str, hparams,
+                 multi_annot: bool = False, need_class_weight = True, normalization=None):
         self._PATH: Path = hparams.path_feature[kind_data]
         self.multi_annot = multi_annot
 
@@ -163,6 +164,8 @@ class SALAMIDataset(Dataset):
 
             self.num_classes = 2
 
+            if not need_class_weight:
+                return
             # Calculate weight per class using no. of samples per class
             self.class_weight = np.zeros(self.num_classes, dtype=np.float32)
             for y in self.all_ys.values():
@@ -180,11 +183,8 @@ class SALAMIDataset(Dataset):
             self.class_weight = self.class_weight.max() / self.class_weight
             self.class_weight = torch.from_numpy(self.class_weight)
         else:
-            try:
-                self.normalization = kwargs['normalization']
-                self.num_classes = kwargs['num_classes']
-            except KeyError:
-                raise Exception(kwargs)
+            assert normalization is not None
+            self.normalization = normalization
 
     def __getitem__(self, idx: int) -> Tuple:
         """
@@ -283,24 +283,29 @@ class SALAMIDataset(Dataset):
 
 
 # Function to load numpy data and normalize, it returns dataloader for train, valid, test
-def get_dataloader(hparams):
-    salami = SALAMIDataset('train', hparams, hparams.train_multi_annot)
-    train_set, valid_set = SALAMIDataset.split(salami, (hparams.train_ratio, -1))
-    valid_set.multi_annot = False
-    test_set = SALAMIDataset('test', hparams,
-                             multi_annot=False,
-                             normalization=salami.normalization,
-                             num_classes=salami.num_classes,
-                             )
-
-    common_kwargs = dict(batch_size=hparams.batch_size,
+def get_dataloader(hparams, only_test=False):
+    loader_kwargs = dict(batch_size=hparams.batch_size,
                          drop_last=False,
                          num_workers=hparams.num_workers,
                          pin_memory=True,
                          collate_fn=SALAMIDataset.pad_collate)
-    train_loader = DataLoader(train_set, shuffle=True, **common_kwargs)
-    valid_loader = DataLoader(valid_set, shuffle=False, **common_kwargs)
-    test_loader = DataLoader(test_set, shuffle=False, **common_kwargs)
+    if only_test:
+        salami = SALAMIDataset('train', hparams, hparams.train_multi_annot,
+                               need_class_weight=False)
+        train_loader = None
+        valid_loader = None
+    else:
+        salami = SALAMIDataset('train', hparams, hparams.train_multi_annot)
+        train_set, valid_set = SALAMIDataset.split(salami, (hparams.train_ratio, -1))
+        valid_set.multi_annot = False
+        train_loader = DataLoader(train_set, shuffle=True, **loader_kwargs)
+        valid_loader = DataLoader(valid_set, shuffle=False, **loader_kwargs)
+
+    test_set = SALAMIDataset('test', hparams,
+                             multi_annot=False,
+                             normalization=salami.normalization,
+                             )
+    test_loader = DataLoader(test_set, shuffle=False, **loader_kwargs)
 
     return train_loader, valid_loader, test_loader
     # return train_loader, valid_loader, None
